@@ -10,7 +10,7 @@ compatibility_flags = ["nodejs_compat"]
 [[d1_databases]]
 binding = "DB"
 database_name = "vps-dog"
-database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+database_id = "f1494026-79da-4652-805b-ec9d296bf1b3"
 migrations_dir = "worker/migrations"
 
 [assets]
@@ -20,6 +20,8 @@ not_found_handling = "single-page-application"
 # `true` so the SPA shell is rendered by the Worker and the `custom_head`
 # setting can be injected. Static assets are still served by the binding.
 run_worker_first = true
+
+workers_dev = true
 
 [triggers]
 crons = ["*/5 * * * *"]

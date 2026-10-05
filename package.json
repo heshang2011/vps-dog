@@ -8,9 +8,10 @@
     "dev": "pnpm --filter @vps-dog/web dev",
     "dev:worker": "wrangler dev --port 8787",
     "build": "pnpm --filter @vps-dog/web build",
-    "deploy": "wrangler d1 migrations apply DB --remote && wrangler deploy",
-    "db:migrate:local": "wrangler d1 migrations apply DB --local",
-    "db:migrate:remote": "wrangler d1 migrations apply DB --remote",
+    "deploy": "node scripts/ensure-d1.mjs && wrangler d1 migrations apply DB --remote && wrangler deploy",
+    "db:ensure": "node scripts/ensure-d1.mjs",
+    "db:migrate:local": "node scripts/ensure-d1.mjs && wrangler d1 migrations apply DB --local",
+    "db:migrate:remote": "node scripts/ensure-d1.mjs && wrangler d1 migrations apply DB --remote",
     "typecheck": "pnpm --filter @vps-dog/worker typecheck && pnpm --filter @vps-dog/web typecheck",
     "test": "pnpm --filter @vps-dog/worker test"
   },
