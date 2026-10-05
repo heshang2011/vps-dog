@@ -1,9 +1,8 @@
-# Contributing to VPS-DOG
+# 为 VPS-DOG 贡献代码
 
-Thanks for taking the time to contribute. This document covers the dev loop, the
-conventions we care about, and how releases are cut.
+感谢你抽出时间参与贡献。本文档涵盖开发流程、我们关注的约定，以及发布是如何进行的。
 
-## Getting set up
+## 环境准备
 
 ```bash
 git clone https://github.com/heshang2011/vps-dog.git
@@ -11,9 +10,9 @@ cd vps-dog
 pnpm install
 ```
 
-You need Node ≥ 20, pnpm ≥ 9 and — only if you touch the agent — Go ≥ 1.22.
+你需要 Node ≥ 20、pnpm ≥ 9，以及 —— 仅当你改到 Agent 时才需要 —— Go ≥ 1.22。
 
-### Running the stack
+### 运行整套服务
 
 ```bash
 # 1. local D1 + Worker API on http://127.0.0.1:8787
@@ -25,10 +24,10 @@ npx wrangler dev --port 8787
 pnpm dev
 ```
 
-Log in at `/admin` with `admin` / `admin` (or whatever `ADMIN_PASSWORD` you put in
-`worker/.dev.vars`).
+在 `/admin` 用 `admin` / `admin` 登录（或你在 `worker/.dev.vars` 里设置的
+任意 `ADMIN_PASSWORD`）。
 
-### Checks
+### 检查
 
 ```bash
 pnpm typecheck        # worker + web
@@ -37,48 +36,48 @@ cd web && pnpm build  # production SPA build
 cd agent && go vet ./... && go build ./...
 ```
 
-CI runs exactly these on every push and pull request.
+CI 在每次 push 与拉取请求时都会运行这些检查。
 
-## Repository conventions
+## 仓库约定
 
-- **The interface contract is [`docs/CONTRACT.md`](CONTRACT.md).** Schema, DTOs, routes
-  and payload shapes are frozen there. Changing a cross-component interface means
-  changing the contract in the same PR and updating every consumer.
-- **Timestamps** are Unix epoch **seconds** (integers). **Bytes** are bytes.
-  **Percentages** are 0–100. No floats-as-strings, no milliseconds.
-- **SQL** lives in `worker/src/db.ts` and migrations. Routes never build SQL strings
-  from user input — always prepared statements with `.bind()`.
-- **Types** are shared through `worker/src/types.ts`; the SPA mirrors them in
-  `web/src/lib/types.ts` (it cannot import across the build boundary).
-- **No new runtime dependencies in the agent.** It must stay pure stdlib so it builds
-  offline and stays under ~8 MB.
-- **UI strings** go through `t()` in `web/src/lib/i18n.ts` — both `zh-CN` and `en`
-  dictionaries must be updated together. Never hard-code user-visible text.
+- **接口契约是 [`docs/CONTRACT.md`](CONTRACT.md)。** 表结构、DTO、路由
+  与载荷结构都在那里冻结。改动跨组件接口意味着在同一个 PR 中修改契约，
+  并更新所有消费方。
+- **时间戳**是 Unix 纪元**秒**（整数）。**字节**就是字节。
+  **百分比**取值为 0–100。不要用字符串表示浮点数，不要用毫秒。
+- **SQL** 位于 `worker/src/db.ts` 与迁移中。路由绝不根据用户输入拼接 SQL
+  字符串 —— 始终使用带 `.bind()` 的预编译语句。
+- **类型**通过 `worker/src/types.ts` 共享；SPA 在
+  `web/src/lib/types.ts` 中镜像它们（它无法跨构建边界导入）。
+- **Agent 中不新增运行时依赖。** 它必须保持纯标准库，这样才能离线构建
+  并保持在约 8 MB 以下。
+- **UI 文案**统一走 `web/src/lib/i18n.ts` 中的 `t()` —— `zh-CN` 与 `en`
+  两份字典必须一起更新。绝不要硬编码用户可见的文本。
 
-## Coding style
+## 代码风格
 
 ### TypeScript
 
-- `strict: true`; avoid `any` in exported signatures.
-- Prefer small pure helpers in `util.ts` / `format.ts` over inline logic in components.
-- Every route validates its input and returns the documented error shape.
-- Errors are `{ error, message }` with a correct status code; never leak stack traces.
+- `strict: true`；导出的签名中避免使用 `any`。
+- 优先把小的纯函数放在 `util.ts` / `format.ts` 中，而不是在组件里写内联逻辑。
+- 每个路由都要校验其输入，并返回文档中约定的错误结构。
+- 错误结构为 `{ error, message }` 并配上正确的状态码；绝不泄露堆栈信息。
 
 ### Go
 
-- `gofmt` clean (`gofmt -w .` before committing).
-- Errors are wrapped with context: `fmt.Errorf("collect cpu: %w", err)`.
-- The collector must never panic: unknown platforms degrade to zeros.
-- Log with the `[vps-dog]` prefix to stdout; systemd captures it.
+- `gofmt` 干净（提交前执行 `gofmt -w .`）。
+- 错误要带上上下文包装：`fmt.Errorf("collect cpu: %w", err)`。
+- 采集器绝不能 panic：未知平台降级为零值。
+- 用 `[vps-dog]` 前缀输出日志到 stdout；systemd 会捕获它。
 
 ### CSS / UI
 
-- Tailwind v4, CSS-first: theme tokens live in `web/src/index.css` under `@theme`.
-- Use semantic utilities (`bg-surface`, `text-muted`, `border-border`) rather than raw
-  hex values in components, so both themes keep working.
-- Every new component must look right in light **and** dark mode, and at 375 px wide.
+- Tailwind v4，CSS 优先：主题令牌位于 `web/src/index.css` 的 `@theme` 下。
+- 使用语义化工具类（`bg-surface`、`text-muted`、`border-border`），而不是在组件中
+  写原始十六进制颜色值，这样两套主题都能正常工作。
+- 每个新组件在浅色**和**深色模式下、以及在 375 px 宽度下都必须显示正常。
 
-## Adding a migration
+## 添加迁移
 
 ```bash
 cd worker
@@ -86,29 +85,29 @@ cd worker
 npx wrangler d1 migrations apply vps-dog --local
 ```
 
-Migrations are applied in filename order. Keep them idempotent where practical
-(`CREATE TABLE IF NOT EXISTS`, `INSERT OR IGNORE`).
+迁移按文件名顺序应用。在可行的情况下保持幂等
+（`CREATE TABLE IF NOT EXISTS`、`INSERT OR IGNORE`）。
 
-## Adding a metric
+## 添加指标
 
-1. Add the field to `MetricSample` in `docs/CONTRACT.md` §3.
-2. Add the column in a new migration and to `metrics` in §2.
-3. Coerce it in the report handler (`worker/src/routes/agent.ts`).
-4. Include it in the downsampler's `AVG`/`MAX` list (`worker/src/db.ts`).
-5. Add it to `MetricSeries.points` and render it in `web/src/pages/NodeDetail.tsx`.
-6. Collect it in `agent/internal/collector/`.
+1. 在 `docs/CONTRACT.md` §3 中把该字段加到 `MetricSample`。
+2. 在新的迁移中添加该列，并把它加到 §2 的 `metrics` 中。
+3. 在上报处理函数（`worker/src/routes/agent.ts`）中做强制转换。
+4. 把它加入降采样器的 `AVG`/`MAX` 列表（`worker/src/db.ts`）。
+5. 把它加到 `MetricSeries.points`，并在 `web/src/pages/NodeDetail.tsx` 中渲染。
+6. 在 `agent/internal/collector/` 中采集它。
 
-## Adding an API endpoint
+## 添加接口
 
-1. Document it in `docs/CONTRACT.md` §4 **and** `docs/API.md`.
-2. Implement it in the matching `worker/src/routes/*.ts` file.
-3. Write a vitest case in `worker/test/api.test.ts` covering the happy path **and**
-   the unauthenticated/unauthorized path.
-4. Wire the client call in `web/src/lib/api.ts` and the UI that consumes it.
+1. 在 `docs/CONTRACT.md` §4 **和** `docs/API.md` 中记录它。
+2. 在对应的 `worker/src/routes/*.ts` 文件中实现它。
+3. 在 `worker/test/api.test.ts` 中写一个 vitest 用例，覆盖正常路径**和**
+   未认证／未授权路径。
+4. 在 `web/src/lib/api.ts` 中接上客户端调用，以及消费它的 UI。
 
-## Commit messages
+## 提交信息
 
-Conventional-commit prefixes, imperative mood:
+Conventional Commits 前缀，祈使语气：
 
 ```
 feat(worker): add per-node token rotation
@@ -117,35 +116,35 @@ docs: document the sweep endpoint
 chore(ci): cache the pnpm store
 ```
 
-Keep PRs focused. A PR that changes the schema and redesigns the dashboard is two PRs.
+保持 PR 聚焦。一个既改表结构又重做仪表盘的 PR 应该拆成两个 PR。
 
-## Pull request checklist
+## 拉取请求检查清单
 
-- [ ] `pnpm typecheck` passes
-- [ ] `pnpm test` passes
-- [ ] `cd web && pnpm build` passes
-- [ ] `cd agent && go vet ./... && gofmt -l .` is clean (if you touched the agent)
-- [ ] `docs/CONTRACT.md` updated if an interface changed
-- [ ] New endpoints have tests and documentation
-- [ ] UI changes verified in both themes and at mobile width
+- [ ] `pnpm typecheck` 通过
+- [ ] `pnpm test` 通过
+- [ ] `cd web && pnpm build` 通过
+- [ ] `cd agent && go vet ./... && gofmt -l .` 干净（如果你改到了 Agent）
+- [ ] 接口有变更时已更新 `docs/CONTRACT.md`
+- [ ] 新接口有测试和文档
+- [ ] UI 改动已在两套主题和移动端宽度下验证
 
-## Release process
+## 发布流程
 
-1. Bump `version` in the root `package.json`, `worker/package.json`,
-   `web/package.json` and `agent/version.go`.
-2. `git tag v1.x.y && git push --tags`.
-3. The `release` workflow cross-compiles the agent for all targets and attaches the
-   binaries plus `install.sh` to the GitHub release.
-4. `npx wrangler deploy` from `worker/` ships the Worker; the SPA is uploaded as part
-   of the same deploy (assets binding).
+1. 在根目录的 `package.json`、`worker/package.json`、
+   `web/package.json` 和 `agent/version.go` 中提升 `version`。
+2. `git tag v1.x.y && git push --tags`。
+3. `release` workflow 会为所有目标交叉编译 Agent，并把二进制文件
+   连同 `install.sh` 附加到 GitHub 发布中。
+4. 在 `worker/` 中执行 `npx wrangler deploy` 即可发布 Worker；SPA 会在同一次
+   部署中上传（assets 绑定）。
 
-## Reporting bugs
+## 问题反馈
 
-Please include: the deployed version, the exact `curl` or UI steps, the response, and
-`npx wrangler tail` output if the Worker is involved. For security issues, open a
-private advisory instead of a public issue.
+请附上：部署的版本、确切的 `curl` 或 UI 操作步骤、响应内容，以及
+涉及 Worker 时的 `npx wrangler tail` 输出。安全相关问题请提交私有
+安全公告，而不要开公开 issue。
 
-## License
+## 许可证
 
-By contributing you agree that your contributions are licensed under the
-[MIT License](../LICENSE).
+参与贡献即表示你同意你的贡献按
+[MIT License](../LICENSE) 授权。

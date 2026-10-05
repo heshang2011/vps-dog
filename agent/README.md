@@ -1,14 +1,13 @@
 # VPS-DOG agent
 
-A single static Go binary that reports host metrics and latency probes to a
-VPS-DOG worker. Standard library only — **zero external dependencies**, so it
-builds and runs completely offline.
+一个静态 Go 二进制文件，向 VPS-DOG worker 上报主机指标与延迟探测结果。
+仅使用标准库 —— **零外部依赖**，因此它完全离线也能构建和运行。
 
-Protocol reference: [`docs/CONTRACT.md`](../docs/CONTRACT.md) §4.1 and §6.
+协议参考：[`docs/CONTRACT.md`](../docs/CONTRACT.md) §4.1 与 §6。
 
 ---
 
-## Build
+## 构建
 
 ```bash
 go build -o vps-dog .                 # current platform
@@ -20,10 +19,10 @@ go build -o dist\vps-dog.exe .        # Windows
 .\build.ps1                           # cross-compile everything into dist\
 ```
 
-`build.sh` / `build.ps1` produce, with `CGO_ENABLED=0` and
-`-ldflags "-s -w -X main.Version=<version>"`:
+`build.sh` / `build.ps1` 在 `CGO_ENABLED=0` 与
+`-ldflags "-s -w -X main.Version=<version>"` 下生成：
 
-| Target          | Artifact                     |
+| 目标平台        | 产物                         |
 | --------------- | ---------------------------- |
 | linux/amd64     | `vps-dog-linux-amd64`        |
 | linux/arm64     | `vps-dog-linux-arm64`        |
@@ -35,10 +34,10 @@ go build -o dist\vps-dog.exe .        # Windows
 
 ---
 
-## Configure
+## 配置
 
-Copy [`agent.example.yaml`](agent.example.yaml) to `/etc/vps-dog/agent.yaml`
-(mode `0600`) and fill in `server` and `token`.
+把 [`agent.example.yaml`](agent.example.yaml) 复制到 `/etc/vps-dog/agent.yaml`
+（权限 `0600`），并填写 `server` 与 `token`。
 
 ```yaml
 server: "https://vps-dog.example.workers.dev"
@@ -48,39 +47,38 @@ interval: 30
 tls_skip_verify: false
 ```
 
-Precedence: **CLI flag > environment variable > config file > built-in default**.
+优先级：**命令行参数 > 环境变量 > 配置文件 > 内置默认值**。
 
-| Setting           | Flag                | Environment             |
+| 设置项            | 参数                | 环境变量                |
 | ----------------- | ------------------- | ----------------------- |
-| config path       | `-c <path>`         | `VPSDOG_CONFIG`         |
+| 配置文件路径      | `-c <path>`         | `VPSDOG_CONFIG`         |
 | `server`          | `-server`           | `VPSDOG_SERVER`         |
 | `token`           | `-token`            | `VPSDOG_TOKEN`          |
 | `name`            | `-name`             | `VPSDOG_NAME`           |
 | `region`          | `-region`           | `VPSDOG_REGION`         |
 | `interval`        | `-interval`         | —                       |
-| `tls_skip_verify` | `-tls-skip-verify`  | `VPSDOG_TLS_SKIP_VERIFY`|
+| `tls_skip_verify` | `-tls-skip-verify`  | `VPSDOG_TLS_SKIP_VERIFY` |
 
-`VPSDOG_DEBUG=1` prints the raw output of the platform helper commands used on
-non-Linux systems.
+`VPSDOG_DEBUG=1` 会打印非 Linux 系统上所用平台辅助命令的原始输出。
 
 ---
 
-## Install
+## 安装
 
-### One-liner (systemd)
+### 一行命令（systemd）
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/heshang2011/vps-dog/main/agent/install.sh \
   | sudo bash -s -- -s https://vps-dog.example.workers.dev -t <token>
 ```
 
-`install.sh` detects the architecture, downloads the matching release binary,
-writes `/etc/vps-dog/agent.yaml` and `/etc/systemd/system/vps-dog.service`, then
-enables and starts the service. Run it with `-u` to uninstall.
+`install.sh` 会检测架构、下载匹配的发布二进制文件、
+写入 `/etc/vps-dog/agent.yaml` 与 `/etc/systemd/system/vps-dog.service`，
+然后启用并启动服务。加 `-u` 运行即可卸载。
 
-### Built-in installer
+### 内置安装脚本
 
-If the binary is already on the host:
+如果二进制文件已经在主机上：
 
 ```bash
 sudo vps-dog -install -server https://vps-dog.example.workers.dev -token <token> -name hk-01
@@ -88,30 +86,30 @@ sudo vps-dog -uninstall            # keeps /etc/vps-dog/agent.yaml
 sudo vps-dog -uninstall -purge     # removes the config directory and the binary
 ```
 
-Both paths require root **and** a running systemd; otherwise they refuse with a
-clear message instead of half-installing.
+两条路径都要求 root **和**运行中的 systemd；否则它们会给出明确的提示并拒绝执行，
+而不是装到一半就停下。
 
 ---
 
-## Flags
+## 命令行参数
 
-| Flag                | Default                    | Description                                                        |
+| 参数                | 默认值                     | 说明                                                               |
 | ------------------- | -------------------------- | ------------------------------------------------------------------ |
-| `-c <path>`         | `/etc/vps-dog/agent.yaml`  | Config file to load (a missing file is not an error).              |
-| `-server <url>`     | `http://127.0.0.1:8787`    | Worker base URL.                                                   |
-| `-token <token>`    | —                          | Agent token issued by the admin API.                               |
-| `-name <name>`      | hostname                   | Node display name, sent on first contact.                          |
-| `-region <label>`   | —                          | Region label, e.g. `HK`.                                           |
-| `-interval <secs>`  | `30`                       | Seconds between reports (clamped to 10..3600).                     |
-| `-tls-skip-verify`  | `false`                    | Accept invalid TLS certificates (self-signed workers).             |
-| `-once`             | `false`                    | Collect once, print the JSON payload to stdout, and exit.          |
-| `-version`          | `false`                    | Print the version and exit.                                        |
-| `-install`          | `false`                    | Write the systemd unit + config, then enable and start the service. |
-| `-uninstall`        | `false`                    | Stop, disable and remove the systemd unit.                         |
-| `-purge`            | `false`                    | With `-uninstall`: also delete the config directory and binary.    |
+| `-c <path>`         | `/etc/vps-dog/agent.yaml`  | 要加载的配置文件（文件不存在不算错误）。                           |
+| `-server <url>`     | `http://127.0.0.1:8787`    | Worker 基础 URL。                                                  |
+| `-token <token>`    | —                          | 由管理员 API 签发的 Agent 令牌。                                   |
+| `-name <name>`      | hostname                   | 节点显示名称，首次联系时发送。                                     |
+| `-region <label>`   | —                          | 地区标签，例如 `HK`。                                              |
+| `-interval <secs>`  | `30`                       | 上报间隔秒数（钳制在 10..3600）。                                  |
+| `-tls-skip-verify`  | `false`                    | 接受无效的 TLS 证书（自签名 worker）。                             |
+| `-once`             | `false`                    | 采集一次，把 JSON 载荷打印到 stdout，然后退出。                    |
+| `-version`          | `false`                    | 打印版本并退出。                                                   |
+| `-install`          | `false`                    | 写入 systemd 服务单元与配置，然后启用并启动服务。                  |
+| `-uninstall`        | `false`                    | 停止、禁用并移除 systemd 服务单元。                                |
+| `-purge`            | `false`                    | 配合 `-uninstall` 使用：同时删除配置目录与二进制文件。             |
 
-`-once` never touches the network and works on every platform — it is the
-quickest way to check what the agent would report:
+`-once` 从不访问网络，并且在所有平台上都能用 —— 它是查看 Agent 会上报什么内容
+最快的方式：
 
 ```console
 $ vps-dog -once
@@ -125,36 +123,35 @@ $ vps-dog -once
 
 ---
 
-## How it works
+## 工作原理
 
 ```
 collect → probe the tasks the server asked for → POST /api/v1/report → sleep interval
 ```
 
-- **Loop.** The first run sends no probes: the server's response tells the agent
-  which probes to run and how often to report. `interval` from the response is
-  clamped to 10..3600 s; on failure the agent backs off 1 s → 2 s → 4 s → … → 60 s
-  and keeps retrying. `SIGINT`/`SIGTERM` shut it down cleanly.
-- **Linux collection.** `/proc/stat` (CPU delta), `/proc/meminfo`,
-  `/proc/net/dev`, `/proc/net/tcp{,6}`, `/proc/net/udp{,6}`, `/proc/uptime`,
-  `/proc/loadavg`, the `/proc` process count, and `syscall.Statfs("/")` for the
-  root filesystem. `net_in`/`net_out` are cumulative since boot over all
-  non-`lo` interfaces; `rx_rate`/`tx_rate` are deltas over the elapsed time and
-  are `0` on the first sample.
-- **Other platforms.** Degrade gracefully to zeros — never crash. On Windows the
-  agent reads memory, disk, uptime, process count, socket counts, cumulative
-  network bytes and CPU load through PowerShell (CIM/WMI with .NET, registry and
-  performance-counter fallbacks, because CIM is unavailable in some hardened or
-  sandboxed environments); on macOS and BSD it uses `sysctl`, `vm_stat`, `df`
-  and `ps`. Load averages are only available where the OS provides them.
-- **Probes** (`icmp`, `tcp`, `http`) each have a timeout and report `ok` as
-  `1`/`0` with `value = -1` on failure. `icmp` uses a raw socket when it has the
-  privileges and otherwise falls back to the system `ping` binary.
-- **Logging.** Every line is prefixed `[vps-dog]`.
+- **循环。** 首次运行不发送任何探测任务：服务器的响应会告诉 Agent 该运行哪些
+  探测任务、以及多久上报一次。响应中的 `interval` 会被限制（钳制）在 10..3600 秒；
+  失败时 Agent 按 1 秒 → 2 秒 → 4 秒 → … → 60 秒退避并持续重试。
+  `SIGINT`/`SIGTERM` 会干净地关闭它。
+- **Linux 采集。** `/proc/stat`（CPU 增量）、`/proc/meminfo`、
+  `/proc/net/dev`、`/proc/net/tcp{,6}`、`/proc/net/udp{,6}`、`/proc/uptime`、
+  `/proc/loadavg`、`/proc` 的进程数，以及针对根文件系统的
+  `syscall.Statfs("/")`。`net_in`/`net_out` 是自启动以来所有
+  非 `lo` 接口的累计值；`rx_rate`/`tx_rate` 是相对已用时间的增量，
+  在第一次采样时为 `0`。
+- **其他平台。** 优雅降级为零值 —— 绝不崩溃。在 Windows 上，
+  Agent 通过 PowerShell 读取内存、磁盘、在线时长、进程数、套接字数量、累计
+  网络字节数与 CPU 负载（使用 .NET 的 CIM/WMI，并有注册表和性能计数器
+  回退方案，因为某些加固或沙箱环境中 CIM 不可用）；在 macOS 和 BSD 上则使用
+  `sysctl`、`vm_stat`、`df` 和 `ps`。负载仅在操作系统提供时可用。
+- **探测任务**（`icmp`、`tcp`、`http`）各自都有超时，并上报 `ok` 为
+  `1`/`0`，失败时 `value = -1`。`icmp` 在有权限时使用原始套接字，
+  否则回退到系统的 `ping` 二进制文件。
+- **日志。** 每一行都带 `[vps-dog]` 前缀。
 
 ---
 
-## Verify
+## 验证
 
 ```bash
 gofmt -l .          # prints nothing

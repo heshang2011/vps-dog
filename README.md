@@ -1,8 +1,8 @@
 # VPS-DOG
 
 <p align="center">
-  <b>A lightweight, self-hosted server monitoring tool that runs entirely on Cloudflare's free tier.</b><br>
-  <sub>In the spirit of <a href="https://github.com/komari-monitor/komari">Komari</a> and <a href="https://github.com/nezhahq/nezha">Nezha</a> — but with no VPS for the panel, no database server, and no Docker.</sub>
+  <b>轻量级自托管服务器监控工具，完全运行在 Cloudflare 免费额度之上。</b><br>
+  <sub>秉承 <a href="https://github.com/komari-monitor/komari">Komari</a> 与 <a href="https://github.com/nezhahq/nezha">Nezha</a> 的理念 —— 但面板无需 VPS，无需数据库服务器，也无需 Docker。</sub>
 </p>
 
 <p align="center">
@@ -15,13 +15,9 @@
 
 ---
 
-## Why
+## 动机
 
-Traditional panels (Nezha, Komari, Uptime Kuma) need a server to host the panel and a
-database next to it. VPS-DOG moves the entire control plane onto **Cloudflare Workers +
-D1**, so the panel costs **$0/month**, has no server to patch, and is globally
-distributed by default. All you run on your own machines is a **single ~6 MB Go binary**
-with zero dependencies.
+传统面板（Nezha、Komari、Uptime Kuma）需要一台服务器来托管面板，还需要在它旁边配一个数据库。VPS-DOG 把整个控制面搬到 **Cloudflare Workers + D1** 上，因此面板成本为 **每月 0 美元**，没有需要打补丁的服务器，而且默认就是全球分布式部署。你自己的机器上只需运行一个 **约 6 MB 的 Go 二进制文件**，零依赖。
 
 ```
 ┌──────────────┐   HTTPS POST /api/v1/report   ┌───────────────────────────┐
@@ -35,27 +31,22 @@ with zero dependencies.
                                                 └─────────────────────────┘
 ```
 
-## Features
+## 功能
 
-- **Zero-cost control plane** — Cloudflare Workers free tier + D1 free tier (5 GB).
-- **One-line agent install** — `curl … | bash -s -- -s <server> -t <token>`.
-- **Real-time metrics** — CPU, memory, swap, disk, network rate + cumulative traffic,
-  TCP/UDP sockets, process count, uptime, load average.
-- **Latency probes** — ICMP / TCP / HTTP, scheduled by the server and executed by the agent.
-- **Beautiful, responsive dashboard** — dark & light themes, live charts, group filter,
-  search, 10 s auto-refresh. Works on phones.
-- **Chinese + English UI** — auto-detected, switchable.
-- **Multi-user admin** — PBKDF2-SHA256 password hashing, HttpOnly cookie sessions,
-  `admin` / `viewer` roles enforced server-side, and an audit log.
-- **Public JSON API** — build your own status page or bot on top.
-- **Automatic retention** — a cron trigger prunes old metrics and probe results;
-  nodes are reported offline the moment they go quiet.
-- **No external dependencies in the agent** — pure Go stdlib, cross-compiled for
-  7 platform/arch combinations.
+- **零成本控制面** —— Cloudflare Workers 免费额度 + D1 免费额度（5 GB）。
+- **一行命令安装 Agent** —— `curl … | bash -s -- -s <server> -t <token>`。
+- **实时指标** —— CPU、内存、Swap、磁盘、网络速率与累计流量、TCP/UDP 套接字、进程数、在线时长、负载。
+- **延迟探测任务** —— ICMP / TCP / HTTP，由服务端调度、Agent 执行。
+- **美观的响应式仪表盘** —— 深色与浅色主题、实时图表、分组筛选、搜索、10 秒自动刷新，手机也能正常使用。
+- **中英文界面** —— 自动检测，可随时切换。
+- **多用户管理** —— PBKDF2-SHA256 密码哈希、HttpOnly cookie 会话、服务端强制校验的 `admin` / `viewer` 角色，以及审计日志。
+- **公开的 JSON API** —— 可在其上构建自己的状态页或机器人。
+- **自动保留策略** —— 定时触发器清除过期指标与探测结果；节点一旦静默即被标记为离线。
+- **Agent 无外部依赖** —— 纯 Go 标准库，交叉编译覆盖 7 种平台/架构组合。
 
-## Quick start
+## 快速开始
 
-### 1. Deploy the panel
+### 1. 部署面板
 
 ```bash
 git clone https://github.com/heshang2011/vps-dog.git
@@ -72,27 +63,25 @@ npx wrangler secret put ADMIN_PASSWORD  # the initial admin password
 npx wrangler deploy
 ```
 
-Open the printed `https://vps-dog.<you>.workers.dev` URL, go to `/admin`, and log in
-with `admin` / the password you just set.
+打开输出的 `https://vps-dog.<you>.workers.dev` 地址，进入 `/admin`，用 `admin` 和刚设置的密码登录。
 
-> Prefer the dashboard? You can also create the D1 database from the Cloudflare
-> dashboard and paste its ID into `worker/wrangler.toml`.
+> 更习惯用仪表盘？也可以在 Cloudflare 仪表盘中创建 D1 数据库，再把它的 ID 粘贴到 `worker/wrangler.toml`。
 
-### 2. Add a server
+### 2. 添加节点
 
-In `/admin/nodes` → **Add node** → copy the token (shown **once**).
+在 `/admin/nodes` 中 → **Add node** → 复制令牌（仅显示**一次**）。
 
-### 3. Install the agent
+### 3. 安装 Agent
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/heshang2011/vps-dog/main/agent/install.sh \
   | sudo bash -s -- -s https://vps-dog.<you>.workers.dev -t <TOKEN> -n hk-01
 ```
 
-The node appears on the dashboard within ~10 seconds.
+节点会在约 10 秒内出现在仪表盘上。
 
 <details>
-<summary>Manual install</summary>
+<summary>手动安装</summary>
 
 ```bash
 # download the binary for your arch from GitHub Releases
@@ -126,24 +115,24 @@ journalctl -u vps-dog -f
 ```
 </details>
 
-## Repository layout
+## 目录结构
 
-| Path | What it is |
+| 路径 | 说明 |
 | --- | --- |
-| [`worker/`](worker) | Cloudflare Worker: Hono API, D1 access layer, cron jobs, vitest suite |
-| [`web/`](web) | React 19 + Vite + Tailwind v4 SPA (dashboard + admin) |
-| [`agent/`](agent) | Go agent: collectors, probes, installer, cross-compile scripts |
-| [`docs/`](docs) | [Deployment](docs/DEPLOYMENT.md), [API reference](docs/API.md), [Architecture](docs/ARCHITECTURE.md), [Contributing](docs/CONTRIBUTING.md), [interface contract](docs/CONTRACT.md) |
+| [`worker/`](worker) | Cloudflare Worker：Hono API、D1 访问层、定时任务、vitest 测试套件 |
+| [`web/`](web) | React 19 + Vite + Tailwind v4 SPA（仪表盘 + 管理后台） |
+| [`agent/`](agent) | Go Agent：采集器、探测任务、安装脚本、交叉编译脚本 |
+| [`docs/`](docs) | [部署](docs/DEPLOYMENT.md)、[API 参考](docs/API.md)、[架构](docs/ARCHITECTURE.md)、[贡献指南](docs/CONTRIBUTING.md)、[接口契约](docs/CONTRACT.md) |
 
-## Documentation
+## 文档
 
-- **[Deployment guide](docs/DEPLOYMENT.md)** — from zero to a live panel, plus custom domains, backups and cost notes.
-- **[HTTP API reference](docs/API.md)** — every endpoint, with `curl` examples.
-- **[Architecture](docs/ARCHITECTURE.md)** — how the pieces fit, the data model, and the design decisions.
-- **[Contributing](docs/CONTRIBUTING.md)** — dev setup, code style, release process.
-- **[Interface contract](docs/CONTRACT.md)** — the frozen cross-component spec.
+- **[部署指南](docs/DEPLOYMENT.md)** —— 从零到上线面板，另含自定义域名、备份与成本说明。
+- **[HTTP API 参考](docs/API.md)** —— 每个端点，附 `curl` 示例。
+- **[架构](docs/ARCHITECTURE.md)** —— 各组件如何协作、数据模型与设计决策。
+- **[贡献指南](docs/CONTRIBUTING.md)** —— 开发环境搭建、代码风格、发布流程。
+- **[接口契约](docs/CONTRACT.md)** —— 已冻结的跨组件规范。
 
-## Development
+## 开发
 
 ```bash
 pnpm install
@@ -160,7 +149,7 @@ pnpm typecheck
 pnpm test
 ```
 
-Agent:
+Agent：
 
 ```bash
 cd agent
@@ -168,7 +157,7 @@ go run . -once        # print a sample payload without sending
 go build -o dist/vps-dog .
 ```
 
-## Public status API
+## 公开状态 API
 
 ```bash
 curl https://vps-dog.<you>.workers.dev/api/status
@@ -176,18 +165,18 @@ curl https://vps-dog.<you>.workers.dev/api/nodes
 curl "https://vps-dog.<you>.workers.dev/api/nodes/<id>/metrics?hours=24"
 ```
 
-See [`docs/API.md`](docs/API.md) for the full surface.
+完整接口见 [`docs/API.md`](docs/API.md)。
 
-## Security
+## 安全
 
-- Passwords are stored as PBKDF2-SHA256 (100 000 iterations, per-user salt).
-- Sessions are random 32-byte ids in an `HttpOnly; SameSite=Lax; Secure` cookie.
-- Agent tokens are stored only as SHA-256 hashes; the plaintext is shown once.
-- Login is rate-limited (10 attempts / 5 min / IP).
-- Every admin mutation is written to an audit log.
+- 密码以 PBKDF2-SHA256 存储（100 000 次迭代，每用户独立盐值）。
+- 会话是 `HttpOnly; SameSite=Lax; Secure` cookie 中的 32 字节随机 ID。
+- Agent 令牌仅以 SHA-256 哈希存储，明文只显示一次。
+- 登录受限流保护（每 IP 每 5 分钟 10 次尝试）。
+- 每次管理员变更都会写入审计日志。
 
-Found a vulnerability? Please open a private security advisory rather than a public issue.
+发现漏洞？请通过私密安全公告反馈，而不要提交公开 issue。
 
-## License
+## 许可证
 
 [MIT](LICENSE)

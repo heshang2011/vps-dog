@@ -1,18 +1,17 @@
-# Deployment guide
+# 部署指南
 
-Everything below assumes a fresh Cloudflare account. Total setup time: ~10 minutes.
-Recurring cost on the free tier: **$0**.
+以下内容假设使用全新的 Cloudflare 账号。总配置时间约 10 分钟。免费额度下的持续开销：**$0**。
 
 ---
 
-## 0. Prerequisites
+## 0. 前置要求
 
-| Tool | Version | Why |
+| 工具 | 版本 | 用途 |
 | --- | --- | --- |
-| Node.js | ≥ 20 | build the SPA and run Wrangler |
-| pnpm | ≥ 9 | workspace package manager |
-| Wrangler | ≥ 4 | deploy the Worker and manage D1 |
-| Go | ≥ 1.22 | only if you build the agent yourself (prebuilt binaries are on the Releases page) |
+| Node.js | ≥ 20 | 构建 SPA 并运行 Wrangler |
+| pnpm | ≥ 9 | 工作区包管理器 |
+| Wrangler | ≥ 4 | 部署 Worker 并管理 D1 |
+| Go | ≥ 1.22 | 仅当你自行构建 Agent 时需要（预编译二进制文件在 Releases 页面） |
 
 ```bash
 node -v && pnpm -v && npx wrangler --version
@@ -20,7 +19,7 @@ node -v && pnpm -v && npx wrangler --version
 
 ---
 
-## 1. Clone and build the frontend
+## 1. 克隆并构建前端
 
 ```bash
 git clone https://github.com/heshang2011/vps-dog.git
@@ -29,14 +28,14 @@ pnpm install
 pnpm build          # emits web/dist — the Worker serves this as static assets
 ```
 
-> The Worker's `[assets]` binding points at `../web/dist`. Wrangler/Miniflare
-> **fails to start** when that directory is missing, so build the SPA before
-> running `wrangler dev` or `wrangler deploy`. (The Worker's own fallback page
-> only covers the case where the binding is absent entirely, e.g. in tests.)
+> Worker 的 `[assets]` 绑定指向 `../web/dist`。该目录缺失时，
+> Wrangler/Miniflare **会启动失败**，因此在运行 `wrangler dev` 或
+> `wrangler deploy` 之前先构建 SPA。（Worker 自带的回退页面
+> 仅覆盖绑定完全缺失的情况，例如在测试中。）
 
 ---
 
-## 2. Create the D1 database
+## 2. 创建 D1 数据库
 
 ```bash
 cd worker
@@ -44,7 +43,7 @@ npx wrangler login
 npx wrangler d1 create vps-dog
 ```
 
-Wrangler prints a block like:
+Wrangler 会打印类似下面的内容：
 
 ```toml
 [[d1_databases]]
@@ -53,44 +52,40 @@ database_name = "vps-dog"
 database_id = "8f3c1e2a-...."
 ```
 
-Paste the real `database_id` into [`worker/wrangler.toml`](../worker/wrangler.toml),
-replacing `REPLACE_WITH_YOUR_D1_DATABASE_ID`.
+把真实的 `database_id` 粘贴到 [`worker/wrangler.toml`](../worker/wrangler.toml) 中，替换 `REPLACE_WITH_YOUR_D1_DATABASE_ID`。
 
 ---
 
-## 3. Apply migrations
+## 3. 应用迁移
 
 ```bash
 npx wrangler d1 migrations apply vps-dog --remote
 ```
 
-This creates `nodes`, `metrics`, `ping_tasks`, `ping_records`, `users`, `sessions`,
-`settings` and `audit_logs`, and seeds the default settings.
+这会创建 `nodes`、`metrics`、`ping_tasks`、`ping_records`、`users`、`sessions`、`settings` 和 `audit_logs`，并写入默认设置。
 
-Local development uses the same command with `--local` (see §7).
+本地开发使用相同的命令并加上 `--local`（见 §7）。
 
 ---
 
-## 4. Set the admin password
+## 4. 设置管理员密码
 
 ```bash
 npx wrangler secret put ADMIN_PASSWORD
 # paste a strong password when prompted
 ```
 
-If you skip this step, the default bootstrap password is `admin` — **change it
-immediately** from `/admin/users` after your first login. The bootstrap account is
-created lazily on the first successful login attempt against an empty `users` table.
+如果跳过此步骤，默认的初始化密码是 `admin` —— 首次登录后请立即在 `/admin/users` 中**修改它**。初始化账号会在针对空 `users` 表的首次成功登录尝试时惰性创建。
 
 ---
 
-## 5. Deploy
+## 5. 部署
 
 ```bash
 npx wrangler deploy
 ```
 
-Output:
+输出：
 
 ```
 Uploaded vps-dog (1.23 sec)
@@ -98,40 +93,39 @@ Uploaded vps-dog (1.23 sec)
   Schedule: */5 * * * *
 ```
 
-Open the URL, click **Admin**, log in with `admin` + your password.
+打开该 URL，点击 **Admin**，使用 `admin` 和你的密码登录。
 
 ---
 
-## 6. Add your first server
+## 6. 添加第一个节点
 
-1. Go to `/admin/nodes` → **Add node**.
-2. Give it a name (`hk-01`), a group (`production`) and a region (`HK`).
-3. **Copy the token now** — it is shown exactly once. Only its SHA-256 hash is stored.
-4. Install the agent:
+1. 进入 `/admin/nodes` → **Add node**。
+2. 为它设置名称（`hk-01`）、分组（`production`）和地区（`HK`）。
+3. **立即复制令牌** —— 它只显示一次。服务端只存储其 SHA-256 哈希。
+4. 安装 Agent：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/heshang2011/vps-dog/main/agent/install.sh \
   | sudo bash -s -- -s https://vps-dog.<your-subdomain>.workers.dev -t <TOKEN> -n hk-01
 ```
 
-5. `journalctl -u vps-dog -f` should show a report every 30 seconds, and the node
-   turns green on the dashboard.
+5. `journalctl -u vps-dog -f` 应显示每 30 秒一次的上报，并且该节点会在仪表盘上变绿。
 
-### Configuring latency probes
+### 配置延迟探测
 
-In `/admin/pings`, add a probe for a node:
+在 `/admin/pings` 中，为某个节点添加探测任务：
 
-| Field | Example | Notes |
+| 字段 | 示例 | 说明 |
 | --- | --- | --- |
-| type | `tcp` | `icmp`, `tcp` or `http` |
-| target | `1.1.1.1:443` | `icmp` → host, `tcp` → `host:port`, `http` → full URL |
-| interval | `60` | seconds |
+| type | `tcp` | `icmp`、`tcp` 或 `http` |
+| target | `1.1.1.1:443` | `icmp` → 主机，`tcp` → `host:port`，`http` → 完整 URL |
+| interval | `60` | 秒 |
 
-The agent picks up new probes on its next report and starts measuring immediately.
+Agent 会在下次上报时获取新探测任务，并立即开始测量。
 
 ---
 
-## 7. Local development
+## 7. 本地开发
 
 ```bash
 # terminal 1 — Worker API
@@ -143,9 +137,9 @@ npx wrangler dev --port 8787
 pnpm dev
 ```
 
-Open http://localhost:5173. Bootstrap login works locally too.
+打开 http://localhost:5173。初始化登录在本地同样可用。
 
-To point the agent at your local Worker:
+让 Agent 指向本地 Worker：
 
 ```bash
 cd agent
@@ -155,33 +149,32 @@ go run . -server http://127.0.0.1:8787 -token <TOKEN> -name dev        # loop
 
 ---
 
-## 8. Custom domain
+## 8. 自定义域名
 
-1. Cloudflare dashboard → **Workers & Pages** → `vps-dog` → **Settings** → **Domains & Routes**.
-2. **Add** → **Custom domain** → `monitor.example.com`.
-3. If the zone is on Cloudflare, DNS and the certificate are configured automatically.
+1. Cloudflare 仪表盘 → **Workers & Pages** → `vps-dog` → **Settings** → **Domains & Routes**。
+2. **Add** → **Custom domain** → `monitor.example.com`。
+3. 如果该域名区域托管在 Cloudflare，DNS 与证书会自动配置。
 
-Update the agents' `server:` value afterwards, then `sudo systemctl restart vps-dog`.
+之后更新各 Agent 的 `server:` 值，然后执行 `sudo systemctl restart vps-dog`。
 
 ---
 
-## 9. Backups
+## 9. 备份
 
-D1 export:
+D1 导出：
 
 ```bash
 npx wrangler d1 export vps-dog --remote --output backup-$(date +%F).sql
 ```
 
-Restore into a fresh database:
+恢复到新数据库：
 
 ```bash
 npx wrangler d1 create vps-dog-restore
 npx wrangler d1 execute vps-dog-restore --remote --file backup-2026-01-01.sql
 ```
 
-Because metrics are high-volume, a nightly export of `nodes`, `users`, `settings`,
-`ping_tasks` and a rolling window of `metrics` is usually enough:
+由于指标数据量很大，通常每晚导出 `nodes`、`users`、`settings`、`ping_tasks` 以及一个滚动窗口的 `metrics` 就足够了：
 
 ```bash
 npx wrangler d1 execute vps-dog --remote --command \
@@ -190,23 +183,19 @@ npx wrangler d1 execute vps-dog --remote --command \
 
 ---
 
-## 10. Tuning & operations
+## 10. 调优与运维
 
-| Setting (`/admin/settings`) | Default | Effect |
+| 设置（`/admin/settings`） | 默认值 | 作用 |
 | --- | --- | --- |
-| `report_interval` | 30 s | How often agents report. Lower = more rows, more D1 writes. |
-| `offline_after` | 90 s | Seconds of silence before a node is shown offline. |
-| `retention_days` | 30 | Metrics older than this are deleted by the 5-minute cron. |
-| `ping_retention_days` | 7 | Same, for probe results. |
-| `custom_head` | empty | Raw HTML injected before `</head>` on the SPA shell. |
+| `report_interval` | 30 s | Agent 的上报频率。值越小则数据行越多、D1 写入越多。 |
+| `offline_after` | 90 s | 节点被显示为离线前的静默秒数。 |
+| `retention_days` | 30 | 早于该时长的指标会被 5 分钟一次的定时任务删除。 |
+| `ping_retention_days` | 7 | 同上，作用于探测结果。 |
+| `custom_head` | empty | 注入到 SPA 外壳 `</head>` 之前的原始 HTML。 |
 
-**Free-tier limits to keep in mind.** D1 allows ~5 M rows read/day and 100 k rows
-written/day on the free plan. One node reporting every 30 s writes 2 880 `metrics`
-rows/day, **plus one `ping_records` row per configured probe per report** — so a node
-with three probes writes roughly 11 500 rows/day. Budget ~8 nodes per 100 k rows/day
-with three probes each, or raise `report_interval` to 60 s to double that.
+**需要注意的免费额度限制。** 免费方案下 D1 允许每天约 5 M 行读取、100 k 行写入。一个每 30 秒上报一次的节点每天写入 2 880 行 `metrics`，**再加上每次上报中每个已配置探测任务的一行 `ping_records`** —— 因此配置三个探测任务的节点每天大约写入 11 500 行。按每个节点三个探测任务计算，每天 100 k 行大约可支持 8 个节点；或者把 `report_interval` 提高到 60 s，即可翻倍。
 
-Manual maintenance:
+手动维护：
 
 ```bash
 # force the retention/offline sweep right now
@@ -218,7 +207,7 @@ npx wrangler tail
 
 ---
 
-## 11. Upgrading
+## 11. 升级
 
 ```bash
 git pull
@@ -226,20 +215,18 @@ pnpm install && pnpm build
 cd worker && npx wrangler d1 migrations apply vps-dog --remote && npx wrangler deploy
 ```
 
-Agents are forward- and backward-compatible with the v1 protocol; upgrading them is
-optional. Re-run `install.sh` (or replace the binary and `systemctl restart vps-dog`)
-to update.
+Agent 与 v1 协议向前和向后兼容；升级它们是可选的。重新运行 `install.sh`（或替换二进制文件并执行 `systemctl restart vps-dog`）即可更新。
 
 ---
 
-## 12. Troubleshooting
+## 12. 常见问题
 
-| Symptom | Cause / fix |
+| 症状 | 原因 / 解决办法 |
 | --- | --- |
-| Node stays offline | Wrong `server:` URL, wrong token, or outbound HTTPS blocked. Check `journalctl -u vps-dog -n 50`. |
-| `401 unauthorized` in agent logs | Token was rotated or the node was deleted. Issue a new token in `/admin/nodes`. |
-| Dashboard is blank | `web/dist` was not built before deploy. Run `pnpm build` and redeploy. |
-| `/admin` says the password is wrong | The `ADMIN_PASSWORD` secret was set after the user was created — the secret only bootstraps the *first* user. Reset via `DELETE FROM users;` in the D1 console, or add a user directly. |
-| `no such table` | Migrations were applied to the wrong database id. Re-check `wrangler.toml`. |
-| Charts empty on a fresh node | History needs at least two reports; wait a minute. |
-| `D1_ERROR: too many SQL variables` | Only possible if you fork and change the batch size; the built-in sweep chunks writes. |
+| 节点一直离线 | `server:` URL 错误、令牌错误，或出站 HTTPS 被阻断。检查 `journalctl -u vps-dog -n 50`。 |
+| Agent 日志中出现 `401 unauthorized` | 令牌已被轮换，或节点已被删除。在 `/admin/nodes` 中签发新令牌。 |
+| 仪表盘一片空白 | 部署前没有构建 `web/dist`。运行 `pnpm build` 并重新部署。 |
+| `/admin` 提示密码错误 | 在用户创建之后才设置 `ADMIN_PASSWORD` 密钥 —— 该密钥只用于初始化*第一个*用户。可在 D1 控制台执行 `DELETE FROM users;` 重置，或直接添加一个用户。 |
+| `no such table` | 迁移被应用到了错误的 database id。请重新检查 `wrangler.toml`。 |
+| 新节点上图表为空 | 历史数据至少需要两次上报；等一分钟。 |
+| `D1_ERROR: too many SQL variables` | 只有在你 fork 并修改批次大小时才可能出现；内置清理任务会分批写入。 |

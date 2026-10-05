@@ -1,12 +1,12 @@
-# VPS-DOG — Interface Contract (v1)
+# VPS-DOG — 接口契约（v1）
 
-> **This file is the single source of truth for cross-component interfaces.**
-> Every teammate MUST implement exactly what is specified here. If you believe a
-> change is required, message the Lead — do not silently diverge.
+> **本文件是跨组件接口的单一事实来源。**
+> 每位协作者都必须严格按照此处规定的内容实现。如果你认为需要做出
+> 变更，请告知 Lead —— 不要擅自偏离。
 
-VPS-DOG is a lightweight server monitoring tool (in the spirit of Komari / Nezha)
-that runs **entirely on Cloudflare Workers** with **D1** as the datastore.
-A tiny Go agent reports metrics; a React SPA renders a clean dashboard.
+VPS-DOG 是一个轻量级服务器监控工具（思路借鉴 Komari / Nezha），
+**完全运行在 Cloudflare Workers** 上，并以 **D1** 作为数据存储。
+一个极小的 Go Agent 负责上报指标；一个 React SPA 渲染简洁的仪表盘。
 
 ```
 ┌─────────────┐   HTTPS POST /api/v1/report    ┌──────────────────────┐
@@ -22,7 +22,7 @@ A tiny Go agent reports metrics; a React SPA renders a clean dashboard.
 
 ---
 
-## 1. Repository layout
+## 1. 目录结构
 
 ```
 VPS-DOG/
@@ -61,16 +61,16 @@ VPS-DOG/
 └── LICENSE                 # [owner: lead]  MIT
 ```
 
-**Write-scope rule:** each teammate writes ONLY inside their own directory.
-Root-level files (`README.md`, `LICENSE`, `.gitignore`, `docs/`) are owned by the
-Lead / docs-devops. Never edit another owner's files.
+**写入范围规则：** 每位协作者只能在自己所属的目录内写入。
+根级文件（`README.md`、`LICENSE`、`.gitignore`、`docs/`）归
+Lead / docs-devops 所有。绝不要编辑其他负责人的文件。
 
 ---
 
-## 2. D1 schema (migration `0001_init.sql`)
+## 2. D1 表结构（迁移 `0001_init.sql`）
 
-All timestamps are **Unix epoch seconds (INTEGER)**. All byte sizes are
-**bytes (INTEGER)**. Percentages are **0–100 REAL**.
+所有时间戳均为 **Unix 纪元秒（INTEGER）**。所有字节大小均为
+**字节（INTEGER）**。百分比为 **0–100 的 REAL**。
 
 ```sql
 PRAGMA foreign_keys = ON;
@@ -178,26 +178,26 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_logs(ts);
 ```
 
-### 2.1 `settings` keys
+### 2.1 `settings` 键
 
 | key                 | default      | meaning                                            |
 | ------------------- | ------------ | -------------------------------------------------- |
-| `site_name`         | `VPS-DOG`    | dashboard title                                    |
-| `site_description`  | `""`         | subtitle                                           |
-| `report_interval`   | `30`         | seconds the agent should wait between reports      |
-| `offline_after`     | `90`         | seconds without a report before a node is offline  |
-| `retention_days`    | `30`         | metric rows older than this are purged by cron     |
-| `ping_retention_days`| `7`         | ping rows older than this are purged by cron       |
+| `site_name`         | `VPS-DOG`    | 仪表盘标题                                          |
+| `site_description`  | `""`         | 副标题                                              |
+| `report_interval`   | `30`         | Agent 两次上报之间应等待的秒数                       |
+| `offline_after`     | `90`         | 超过该秒数未收到上报，节点即视为离线                 |
+| `retention_days`    | `30`         | 早于该天数的指标行会被定时任务清除                   |
+| `ping_retention_days`| `7`         | 早于该天数的探测行会被定时任务清除                   |
 | `theme`             | `auto`       | `auto` \| `light` \| `dark`                        |
-| `custom_head`       | `""`         | raw HTML injected before `</head>` on the SPA shell |
-| `allow_auto_register`| `false`     | create a node when an unknown agent token reports  |
+| `custom_head`       | `""`         | 注入到 SPA 外壳 `</head>` 之前的原始 HTML            |
+| `allow_auto_register`| `false`     | 未知 Agent 令牌上报时是否创建节点                    |
 
-Settings are read through `getSettings(db)` which returns a fully-populated
-object (defaults merged). Unknown keys are ignored on write.
+设置通过 `getSettings(db)` 读取，返回一个已完整填充的对象
+（默认值已合并）。写入时未知键会被忽略。
 
 ---
 
-## 3. Shared DTOs
+## 3. 共享 DTO
 
 ```ts
 // The sample the agent sends and the worker stores.
@@ -267,7 +267,7 @@ interface PublicStatus {
 }
 ```
 
-### 3.1 History payload
+### 3.1 历史数据载荷
 
 ```ts
 // GET /api/nodes/:id/metrics?hours=1
@@ -289,28 +289,28 @@ interface MetricSeries {
 }
 ```
 
-**Downsampling rule (worker MUST implement):**
-`hours <= 6` → raw rows. Otherwise bucket into at most **360** points:
-`step = ceil(hours*3600/360)`, `ts = (ts/step)*step`, values averaged
-(`net_in`/`net_out` use MAX because they are cumulative counters).
+**降采样规则（Worker 必须实现）：**
+`hours <= 6` → 原始行。否则分桶为至多 **360** 个点：
+`step = ceil(hours*3600/360)`，`ts = (ts/step)*step`，取值取平均
+（`net_in`/`net_out` 使用 MAX，因为它们是累计计数器）。
 
 ---
 
 ## 4. HTTP API
 
-Base path `/api`. All responses are JSON (`content-type: application/json`).
-Errors use `{ "error": "<code>", "message": "<human readable>" }` with the
-matching status code. Success responses for mutations return `{ "ok": true, ... }`.
+基础路径为 `/api`。所有响应均为 JSON（`content-type: application/json`）。
+错误使用 `{ "error": "<code>", "message": "<human readable>" }`，并搭配
+相应的状态码。变更类操作成功时返回 `{ "ok": true, ... }`。
 
-### 4.1 Agent ingest
+### 4.1 Agent 上报接收
 
 #### `POST /api/v1/report`
 
-Headers (one of):
+请求头（二选一）：
 - `Authorization: Bearer <agent-token>`
 - `X-Node-Token: <agent-token>`
 
-Body:
+请求体：
 
 ```jsonc
 {
@@ -330,12 +330,12 @@ Body:
 }
 ```
 
-`ts` lets an agent that buffered samples report them at the time they were taken.
-It is clamped to **now − 7 days … now + 1 hour**; anything outside is replaced with
-the server clock. The row is upserted on `(node_id, ts)`, so re-sending the same
-timestamp overwrites rather than duplicating.
+`ts` 允许 Agent 把缓冲的采样按采集时刻上报。
+它会被钳制在 **当前时间 − 7 天 … 当前时间 + 1 小时**；超出范围的值会替换为
+服务器时钟。该行按 `(node_id, ts)` 做 upsert，因此重复发送同一
+时间戳会覆盖而不是产生重复行。
 
-`200` response:
+`200` 响应：
 
 ```json
 {
@@ -350,82 +350,82 @@ timestamp overwrites rather than duplicating.
 }
 ```
 
-Semantics:
-- Token lookup is by `sha256(token)` against `nodes.token_hash`.
-- **Auto-registration**: if the token is unknown AND `allow_auto_register`
-  (setting, default `false`) is on, a new node is created. Otherwise `401`.
-  *Note:* a dedicated `POST /api/admin/nodes` always issues the token; the agent
-  is normally configured with an admin-issued token.
-- Writes one `metrics` row, updates `nodes.latest/online/last_seen`,
-  inserts `ping_records` for any ping whose `name+target` matches a task
-  (unknown probes are auto-created as `ping_tasks` for that node).
-- `401 {"error":"unauthorized"}` on a bad token.
-- `400 {"error":"bad_request"}` on a malformed body.
+语义：
+- 令牌查找通过 `sha256(token)` 与 `nodes.token_hash` 比对。
+- **自动注册**：如果令牌未知，且 `allow_auto_register`
+  （设置项，默认 `false`）为开，则创建新节点。否则返回 `401`。
+  *注意：* 专用的 `POST /api/admin/nodes` 始终会签发令牌；Agent
+  通常配置为使用管理员签发的令牌。
+- 写入一行 `metrics`，更新 `nodes.latest/online/last_seen`，
+  并为 `name+target` 匹配到任务的探测插入 `ping_records`
+  （未知探测会按该节点自动创建为 `ping_tasks`）。
+- 令牌错误时返回 `401 {"error":"unauthorized"}`。
+- 请求体格式错误时返回 `400 {"error":"bad_request"}`。
 
-### 4.2 Public read API (no auth)
+### 4.2 公开读取 API（无需认证）
 
 | Method | Path                        | Returns                                        |
 | ------ | --------------------------- | ---------------------------------------------- |
 | GET    | `/api/status`               | `PublicStatus`                                 |
 | GET    | `/api/nodes`                | `{ nodes: NodeSummary[], status: PublicStatus }` |
 | GET    | `/api/nodes/:id`            | `NodeDetail`                                   |
-| GET    | `/api/nodes/:id/metrics`    | `MetricSeries` — query `?hours=1` (1..168)     |
+| GET    | `/api/nodes/:id/metrics`    | `MetricSeries` — 查询参数 `?hours=1`（1..168）  |
 | GET    | `/api/nodes/:id/pings`      | `{ pings: Array<PingTaskSummary & { series: … }> }` |
 | GET    | `/api/groups`               | `{ groups: Array<{ name: string; count: number }> }` |
 
-`hidden = 1` nodes are excluded from `/api/nodes` and counted as neither online
-nor offline in `/api/status`. They remain reachable by direct `:id` for admins
-only (public callers get `404`).
+`hidden = 1` 的节点会从 `/api/nodes` 中排除，并且在 `/api/status` 中既不计为在线
+也不计为离线。它们仍可通过 `:id` 直接访问，但仅限管理员
+（公开调用者会得到 `404`）。
 
-### 4.3 Auth API
+### 4.3 认证 API
 
 | Method | Path                 | Body                          | Notes                                        |
 | ------ | -------------------- | ----------------------------- | -------------------------------------------- |
-| POST   | `/api/auth/login`    | `{username, password}`        | sets `vpsdog_session` cookie (HttpOnly, SameSite=Lax, Secure, 7d) |
-| POST   | `/api/auth/logout`   | —                             | clears cookie + deletes session              |
-| GET    | `/api/auth/me`       | —                             | `{user:{id,username,role}}` or `401`         |
-| POST   | `/api/auth/password` | `{old_password,new_password}` | authenticated                                |
+| POST   | `/api/auth/login`    | `{username, password}`        | 设置 `vpsdog_session` Cookie（HttpOnly、SameSite=Lax、Secure、7d） |
+| POST   | `/api/auth/logout`   | —                             | 清除 Cookie 并删除会话                        |
+| GET    | `/api/auth/me`       | —                             | `{user:{id,username,role}}` 或 `401`         |
+| POST   | `/api/auth/password` | `{old_password,new_password}` | 需已认证                                      |
 
-**Bootstrap:** if `users` is empty, `POST /api/auth/login` with
-`admin` / the env var `ADMIN_PASSWORD` (wrangler secret) creates the initial
-admin user and logs in. If `ADMIN_PASSWORD` is unset the default is `admin`.
-The response MUST include `"bootstrap": true` the first time.
+**初始化：** 如果 `users` 为空，使用 `admin` / 环境变量 `ADMIN_PASSWORD`
+（wrangler secret）调用 `POST /api/auth/login` 会创建初始
+管理员用户并登录。如果 `ADMIN_PASSWORD` 未设置，默认值为 `admin`。
+首次响应必须包含 `"bootstrap": true`。
 
-### 4.4 Admin API (session cookie or `Authorization: Bearer <session-id>`)
+### 4.4 管理 API（会话 Cookie 或 `Authorization: Bearer <session-id>`）
 
-**Role enforcement.** Every `/api/admin/*` route requires an authenticated session.
-Mutating requests (`POST`, `PATCH`, `PUT`, `DELETE`) additionally require
-`role === "admin"` and return `403 {"error":"forbidden"}` for a `viewer`.
-Reads (`GET`) are open to any authenticated user.
+**角色校验。** 每个 `/api/admin/*` 路由都要求已认证的会话。
+变更类请求（`POST`、`PATCH`、`PUT`、`DELETE`）额外要求
+`role === "admin"`，对 `viewer` 返回 `403 {"error":"forbidden"}`。
+读取类请求（`GET`）对任何已认证用户开放。
 
 | Method | Path                             | Purpose                                              |
 | ------ | -------------------------------- | ---------------------------------------------------- |
-| GET    | `/api/admin/nodes`               | all nodes incl. hidden, plus `token_hint`            |
-| POST   | `/api/admin/nodes`               | create node → `{node, token}` (**plaintext token returned once only**) |
-| PATCH  | `/api/admin/nodes/:id`           | update `name/group/region/tags/hidden/sort_order`    |
-| DELETE | `/api/admin/nodes/:id`           | delete node + its metrics/pings                      |
-| POST   | `/api/admin/nodes/:id/token`     | rotate token → `{token}`                             |
-| GET    | `/api/admin/pings?node_id=`      | list probe tasks                                     |
-| POST   | `/api/admin/pings`               | create probe task                                    |
-| PATCH  | `/api/admin/pings/:id`           | update                                               |
-| DELETE | `/api/admin/pings/:id`           | delete                                               |
-| GET    | `/api/admin/settings`            | full settings object                                 |
-| PUT    | `/api/admin/settings`            | partial update                                       |
-| GET    | `/api/admin/users`               | list users (no hashes)                               |
+| GET    | `/api/admin/nodes`               | 所有节点（含隐藏节点），外加 `token_hint`             |
+| POST   | `/api/admin/nodes`               | 创建节点 → `{node, token}`（**明文令牌仅返回一次**）  |
+| PATCH  | `/api/admin/nodes/:id`           | 更新 `name/group/region/tags/hidden/sort_order`      |
+| DELETE | `/api/admin/nodes/:id`           | 删除节点及其指标 / 探测数据                           |
+| POST   | `/api/admin/nodes/:id/token`     | 轮换令牌 → `{token}`                                 |
+| GET    | `/api/admin/pings?node_id=`      | 列出探测任务                                          |
+| POST   | `/api/admin/pings`               | 创建探测任务                                          |
+| PATCH  | `/api/admin/pings/:id`           | 更新                                                  |
+| DELETE | `/api/admin/pings/:id`           | 删除                                                  |
+| GET    | `/api/admin/settings`            | 完整设置对象                                          |
+| PUT    | `/api/admin/settings`            | 部分更新                                              |
+| GET    | `/api/admin/users`               | 列出用户（不含哈希）                                  |
 | POST   | `/api/admin/users`               | `{username,password,role}`                           |
-| DELETE | `/api/admin/users/:id`           | delete (cannot delete the last admin / self)         |
-| GET    | `/api/admin/audit?limit=100`     | recent audit rows                                    |
+| DELETE | `/api/admin/users/:id`           | 删除（不能删除最后一个管理员 / 自己）                 |
+| GET    | `/api/admin/audit?limit=100`     | 最近的审计记录行                                      |
 | GET    | `/api/admin/overview`            | `{nodes, online, offline, metrics_rows, oldest_ts, d1_size}` |
 
-Every mutating admin call writes an `audit_logs` row.
+每次变更类管理调用都会写入一行 `audit_logs`。
 
-### 4.5 Static assets
+### 4.5 静态资源
 
-The Worker serves the built SPA from the `ASSETS` binding. `run_worker_first` is
-`true` so the Worker renders the HTML shell (needed to inject `custom_head`);
-static assets are still served by the binding. Any `GET` that is not under `/api`
-and does not match a file falls back to `index.html` (SPA routing).
-`wrangler.toml`:
+Worker 通过 `ASSETS` 绑定提供构建后的 SPA。`run_worker_first` 为
+`true`，因此 Worker 渲染 HTML 外壳（用于注入 `custom_head`）；
+静态资源仍由该绑定提供。任何不在 `/api` 之下、且
+不匹配文件的 `GET` 都会回退到 `index.html`（SPA 路由）。
+`wrangler.toml`：
 
 ```toml
 [assets]
@@ -437,31 +437,31 @@ run_worker_first = true
 
 ---
 
-## 5. Auth details
+## 5. 认证细节
 
-- **Password hash**: `pbkdf2$<iterations>$<salt-b64>$<hash-b64>` using
-  PBKDF2-SHA256, 100_000 iterations, 16-byte salt, 32-byte key, via WebCrypto
-  (`crypto.subtle.deriveBits`). Verification uses a constant-time compare.
-- **Session cookie**: name `vpsdog_session`; value is the `sessions.id`.
-  TTL 7 days. Logout deletes the row.
-- **Agent tokens**: 32 random bytes → hex (64 chars). Stored only as
-  `sha256` hex. `token_hint` = first 8 chars for display.
-- **CORS**: `OPTIONS /api/*` returns 204 with
-  `Access-Control-Allow-Origin: <request Origin or *>`,
-  `Access-Control-Allow-Headers: content-type, authorization, x-node-token`,
-  `Access-Control-Allow-Methods: GET,POST,PATCH,PUT,DELETE,OPTIONS`,
-  `Access-Control-Allow-Credentials: true`.
-  All `/api/*` responses echo the CORS headers.
-- **Rate limiting** on `/api/auth/login`: max 10 attempts / 5 min / IP,
-  implemented with an in-memory `Map` on the isolate (best effort, documented).
+- **密码哈希**：`pbkdf2$<iterations>$<salt-b64>$<hash-b64>`，使用
+  PBKDF2-SHA256、100_000 次迭代、16 字节盐值、32 字节密钥，经由 WebCrypto
+  （`crypto.subtle.deriveBits`）。校验使用常量时间比较。
+- **会话 Cookie**：名称为 `vpsdog_session`；值为 `sessions.id`。
+  TTL 为 7 天。注销会删除该行。
+- **Agent 令牌**：32 个随机字节 → hex（64 字符）。仅以
+  `sha256` hex 存储。`token_hint` = 前 8 个字符，用于展示。
+- **CORS**：`OPTIONS /api/*` 返回 204，并带
+  `Access-Control-Allow-Origin: <request Origin or *>`、
+  `Access-Control-Allow-Headers: content-type, authorization, x-node-token`、
+  `Access-Control-Allow-Methods: GET,POST,PATCH,PUT,DELETE,OPTIONS`、
+  `Access-Control-Allow-Credentials: true`。
+  所有 `/api/*` 响应都会回显 CORS 头。
+- **限流**：作用于 `/api/auth/login`：每个 IP 最多 10 次尝试 / 5 分钟，
+  通过 isolate 上的内存 `Map` 实现（尽力而为，已在文档中说明）。
 
 ---
 
-## 6. Agent protocol (Go)
+## 6. Agent 协议（Go）
 
-The agent is a single static binary, no runtime deps, < 8 MB.
+Agent 是单个静态二进制文件，无运行时依赖，小于 8 MB。
 
-**Config** — `agent.yaml` (optional; CLI flags / env override):
+**配置** —— `agent.yaml`（可选；命令行参数 / 环境变量可覆盖）：
 
 ```yaml
 server: https://vps-dog.example.workers.dev   # env VPSDOG_SERVER
@@ -471,102 +471,100 @@ interval: 30                                   # seconds, server may override
 tls_skip_verify: false
 ```
 
-Precedence: CLI flag > env var > config file > built-in default.
+优先级：命令行参数 > 环境变量 > 配置文件 > 内置默认值。
 
-**Flags:** `-c <path>` (default `/etc/vps-dog/agent.yaml`), `-server`, `-token`,
-`-name`, `-interval`, `-once`, `-version`, `-install`, `-uninstall`.
+**参数：** `-c <path>`（默认 `/etc/vps-dog/agent.yaml`）、`-server`、`-token`、
+`-name`、`-interval`、`-once`、`-version`、`-install`、`-uninstall`。
 
-**Collection** (`internal/collector`) — Linux primary, with graceful degradation
-on other OSes (return zeros, never crash):
-- CPU % — delta of `/proc/stat` totals between samples.
-- Memory/swap — `/proc/meminfo`.
-- Disk — `syscall.Statfs` on `/` (report the root filesystem).
-- Network — `/proc/net/dev` cumulative bytes (skip `lo`); rates = delta / elapsed.
-- TCP/UDP socket counts — `/proc/net/tcp`, `/proc/net/tcp6`, `/proc/net/udp`.
-- Process count — count of numeric entries in `/proc`.
-- Uptime — `/proc/uptime`.
-- Load — `/proc/loadavg`.
+**采集**（`internal/collector`）—— 以 Linux 为主，在其他操作系统上优雅降级
+（返回零值，绝不崩溃）：
+- CPU % —— 两次采样之间 `/proc/stat` 总计值的差值。
+- 内存 / swap —— `/proc/meminfo`。
+- 磁盘 —— 对 `/` 调用 `syscall.Statfs`（上报根文件系统）。
+- 网络 —— `/proc/net/dev` 的累计字节数（跳过 `lo`）；速率 = 差值 / 经过时间。
+- TCP/UDP socket 数量 —— `/proc/net/tcp`、`/proc/net/tcp6`、`/proc/net/udp`。
+- 进程数 —— `/proc` 下数字条目（PID 目录）的个数。
+- 在线时长 —— `/proc/uptime`。
+- 负载 —— `/proc/loadavg`。
 
-**Latency probes** (`internal/probe`):
-- `icmp` — raw ICMP echo when running as root, else `exec` `ping -c 1 -W 2`.
-- `tcp` — `net.DialTimeout("tcp", target, 3s)`, latency = connect duration.
-- `http` — `GET` the URL with a 5 s timeout; latency = time to first byte;
-  `ok` = status < 400.
+**延迟探测**（`internal/probe`）：
+- `icmp` —— 以 root 运行时使用原始 ICMP echo，否则 `exec` `ping -c 1 -W 2`。
+- `tcp` —— `net.DialTimeout("tcp", target, 3s)`，延迟 = 连接耗时。
+- `http` —— 以 5 s 超时 `GET` 该 URL；延迟 = 首字节时间；
+  `ok` = 状态码 < 400。
 
-**Loop:** collect → probe the tasks returned by the server → POST JSON →
-read `interval` from the response and sleep (clamped to 10..3600 s).
-On network error, retry with exponential backoff (1s → 2s → … → max 60s) and
-keep the last known interval. Log to stdout with a `[vps-dog]` prefix.
+**循环：** 采集 → 探测服务器返回的任务 → POST JSON →
+从响应中读取 `interval` 并休眠（钳制在 10..3600 s）。
+网络出错时，按指数退避重试（1s → 2s → … → 最大 60s），
+并保留最后一次已知的上报间隔。日志以 `[vps-dog]` 前缀输出到 stdout。
 
-**Also required:**
-- `agent/install.sh` — one-liner installer for systemd systems
-  (`curl -fsSL .../install.sh | bash -s -- -s <server> -t <token>`), writes
-  `/etc/systemd/system/vps-dog.service`, enables + starts it.
-- `agent/build.sh` + `agent/build.ps1` — cross-compile linux/amd64, linux/arm64,
-  linux/armv7, darwin/amd64, darwin/arm64, windows/amd64 into `dist/`.
-- `go.mod` module path `github.com/vps-dog/agent`, Go 1.22+, **zero external
-  dependencies** (stdlib only) so the build works offline.
+**另外必须提供：**
+- `agent/install.sh` —— 面向 systemd 系统的一行命令安装脚本
+  （`curl -fsSL .../install.sh | bash -s -- -s <server> -t <token>`），写入
+  `/etc/systemd/system/vps-dog.service`，并启用 + 启动它。
+- `agent/build.sh` + `agent/build.ps1` —— 交叉编译 linux/amd64、linux/arm64、
+  linux/armv7、darwin/amd64、darwin/arm64、windows/amd64 到 `dist/`。
+- `go.mod` 模块路径 `github.com/vps-dog/agent`，Go 1.22+，**零外部
+  依赖**（仅标准库），以便离线构建。
 
 ---
 
-## 7. Frontend (React SPA)
+## 7. 前端（React SPA）
 
-**Stack:** Vite + React 19 + TypeScript + `react-router-dom` v7 +
-`@tanstack/react-query` v5 + `echarts` (imported directly, wrapped in a small
-`<Chart>` component — do NOT use `echarts-for-react`) + Tailwind CSS v4 via
-`@tailwindcss/vite`.
+**技术栈：** Vite + React 19 + TypeScript + `react-router-dom` v7 +
+`@tanstack/react-query` v5 + `echarts`（直接引入，包装在一个小的
+`<Chart>` 组件中 —— 不要使用 `echarts-for-react`）+ 通过
+`@tailwindcss/vite` 使用 Tailwind CSS v4。
 
-**Routes**
+**路由**
 
 | Path              | Page          | Contents                                                                 |
 | ----------------- | ------------- | ------------------------------------------------------------------------ |
-| `/`               | `Dashboard`   | status strip (online/offline/total, site name), node card grid, group filter, search, auto-refresh 10 s |
-| `/node/:id`       | `NodeDetail`  | big CPU / MEM / DISK gauges, load + uptime + traffic tiles, ECharts time-series (CPU/MEM, network rate, load), ping table with sparkline, 1h/6h/24h/7d range switch |
-| `/admin`          | `AdminLogin`  | login form when unauthenticated                                            |
-| `/admin/nodes`    | `AdminNodes`  | table: add / edit / delete / rotate token / toggle hidden / reorder        |
-| `/admin/pings`    | `AdminPings`  | probe task CRUD                                                            |
-| `/admin/settings` | `AdminSettings`| site settings form                                                        |
-| `/admin/users`    | `AdminUsers`  | user CRUD                                                                  |
-| `/admin/audit`    | `AdminAudit`  | audit log table                                                            |
+| `/`               | `Dashboard`   | 状态条（在线 / 离线 / 总数、站点名称）、节点卡片网格、分组筛选、搜索、10 s 自动刷新 |
+| `/node/:id`       | `NodeDetail`  | 大型 CPU / MEM / DISK 仪表、负载 + 在线时长 + 流量瓦片、ECharts 时间序列（CPU/MEM、网络速率、负载）、带迷你图的探测表格、1h/6h/24h/7d 范围切换 |
+| `/admin`          | `AdminLogin`  | 未认证时显示登录表单                                                       |
+| `/admin/nodes`    | `AdminNodes`  | 表格：新增 / 编辑 / 删除 / 轮换令牌 / 切换隐藏 / 排序                      |
+| `/admin/pings`    | `AdminPings`  | 探测任务 CRUD                                                             |
+| `/admin/settings` | `AdminSettings`| 站点设置表单                                                              |
+| `/admin/users`    | `AdminUsers`  | 用户 CRUD                                                                 |
+| `/admin/audit`    | `AdminAudit`  | 审计日志表格                                                              |
 
-**Design language** (this is a headline requirement — "界面简洁美观"):
-- Dark-first, but a real light theme too. Default follows `prefers-color-scheme`
-  and can be overridden; persist in `localStorage` under `vpsdog.theme`.
-- Palette — dark: bg `#0b0f14`, surface `#131a22`, border `#1f2a36`,
-  text `#e6edf3`, muted `#8b98a5`, accent `#3b82f6`, success `#22c55e`,
-  warn `#f59e0b`, danger `#ef4444`.
-  Light: bg `#f6f8fa`, surface `#ffffff`, border `#e2e8f0`, text `#0f172a`,
-  muted `#64748b`.
-- Rounded-2xl cards, 1px borders, no heavy shadows, generous whitespace,
-  tabular-nums for all figures, subtle 150 ms transitions.
-- Online = pulsing green dot; offline = grey dot.
-- Responsive: 1 column < 640 px, 2 < 1024 px, 3+ above. Admin tables scroll
-  horizontally on mobile.
-- Charts: no grid lines except a faint horizontal one, smooth lines,
-  area gradient fill, tooltip on crosshair.
-- i18n: `zh-CN` and `en`, auto-detected from `navigator.language`, toggle in the
-  header, persisted in `localStorage` under `vpsdog.lang`. All UI strings go
-  through a tiny `t()` helper (`src/lib/i18n.ts`) — no hard-coded Chinese/English
-  in components.
+**设计语言**（这是首要要求 ——「界面简洁美观」）：
+- 深色优先，但也提供真正的浅色主题。默认跟随 `prefers-color-scheme`，
+  可被覆盖；持久化在 `localStorage` 的 `vpsdog.theme` 下。
+- 配色 —— 深色：背景 `#0b0f14`，表面 `#131a22`，边框 `#1f2a36`，
+  文本 `#e6edf3`，弱化 `#8b98a5`，强调 `#3b82f6`，成功 `#22c55e`，
+  警告 `#f59e0b`，危险 `#ef4444`。
+  浅色：背景 `#f6f8fa`，表面 `#ffffff`，边框 `#e2e8f0`，文本 `#0f172a`，
+  弱化 `#64748b`。
+- 圆角 2xl 卡片、1px 边框、无重阴影、充足留白，
+  所有数字使用 tabular-nums、150 ms 微妙过渡。
+- 在线 = 脉动的绿点；离线 = 灰点。
+- 响应式：小于 640 px 单列，小于 1024 px 两列，之上三列及以上。管理表格在移动端
+  横向滚动。
+- 图表：除一条淡淡的水平线外无网格线，平滑曲线，
+  面积渐变填充，十字准星提示框。
+- i18n：`zh-CN` 与 `en`，从 `navigator.language` 自动检测，页头
+  可切换，持久化在 `localStorage` 的 `vpsdog.lang` 下。所有 UI 文案都
+  经过一个极小的 `t()` 辅助函数（`src/lib/i18n.ts`）—— 组件中不得硬编码中文 / 英文。
 
-**Dev proxy:** `vite.config.ts` proxies `/api` to `http://127.0.0.1:8787`
-(`wrangler dev`) so `pnpm dev` gives a working full-stack dev loop.
+**开发代理：** `vite.config.ts` 将 `/api` 代理到 `http://127.0.0.1:8787`
+（`wrangler dev`），因此 `pnpm dev` 提供可用的全栈开发闭环。
 
-**Build output:** `web/dist` (consumed by the Worker assets binding).
+**构建产物：** `web/dist`（由 Worker 的资源绑定消费）。
 
 ---
 
-## 8. Verification requirements
+## 8. 验证要求
 
-Every teammate must leave behind a **runnable** check and report the exact
-command + observed result:
+每位协作者都必须留下一个**可运行**的检查，并报告确切的
+命令 + 观察到的结果：
 
 | Owner          | Must pass                                                          |
 | -------------- | ------------------------------------------------------------------ |
-| worker-backend | `pnpm install && pnpm typecheck && pnpm test` inside `worker/` — vitest with `@cloudflare/vitest-pool-workers` exercising: health, login bootstrap, agent report → node appears online, metrics history downsampling, admin node CRUD, 401 paths. |
-| web-frontend   | `pnpm install && pnpm build` inside `web/` — zero TS errors, `dist/index.html` emitted. |
-| go-agent       | `go vet ./... && go build ./...` and `go run . -once` against a local mock or `-version`. |
-| docs-devops    | all files present, CI YAML parses, links resolve.                   |
+| worker-backend | 在 `worker/` 内运行 `pnpm install && pnpm typecheck && pnpm test` —— 使用 `@cloudflare/vitest-pool-workers` 的 vitest 覆盖：健康检查、登录初始化、Agent 上报 → 节点变为在线、指标历史降采样、管理节点 CRUD、401 路径。 |
+| web-frontend   | 在 `web/` 内运行 `pnpm install && pnpm build` —— 零 TS 错误，产出 `dist/index.html`。 |
+| go-agent       | `go vet ./... && go build ./...`，以及针对本地 mock 运行 `go run . -once`，或运行 `-version`。 |
+| docs-devops    | 所有文件齐备，CI YAML 可解析，链接可达。                            |
 
-The Lead runs the final end-to-end check (`wrangler dev` + real agent report)
-before declaring the goal complete.
+Lead 在宣布目标完成前运行最终的端到端检查（`wrangler dev` + 真实 Agent 上报）。

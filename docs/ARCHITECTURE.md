@@ -1,22 +1,22 @@
-# Architecture
+# 架构
 
-## Goals and non-goals
+## 目标与非目标
 
-**Goals**
+**目标**
 
-1. Run the entire control plane on Cloudflare's free tier — no VPS for the panel.
-2. Keep the agent a single static binary with zero runtime dependencies.
-3. Store everything in one D1 (SQLite) database, reachable from the Worker.
-4. Serve a fast, clean dashboard that works on a phone.
-5. Stay small enough that one person can read the whole codebase in an evening.
+1. 整个控制平面跑在 Cloudflare 免费额度上 —— 面板不需要 VPS。
+2. Agent 保持为单个静态二进制文件，零运行时依赖。
+3. 所有数据存在一个 D1（SQLite）数据库中，Worker 可直接访问。
+4. 提供快速、简洁、在手机上也能用的仪表盘。
+5. 代码量足够小，一个人一个晚上就能读完整个代码库。
 
-**Non-goals**
+**非目标**
 
-- Long-term metrics retention at high resolution (D1 is not a time-series database).
-- Container/process-level introspection (that is what Netdata and Beszel do).
-- Alerting pipelines (webhooks/Telegram) — a natural next step, not v1.
+- 高分辨率指标的长期保留（D1 不是时间序列数据库）。
+- 容器／进程级的内省（那是 Netdata 和 Beszel 的职责）。
+- 告警流水线（webhook／Telegram）—— 是自然的下一步，但不属于 v1。
 
-## Component map
+## 组件图
 
 ```
                         ┌──────────────────────────────────────────┐
@@ -48,60 +48,58 @@
                                   └───────────┘
 ```
 
-## Request paths
+## 请求链路
 
-### Agent report (the hot path)
+### Agent 上报（热路径）
 
-1. `POST /api/v1/report` arrives with `Authorization: Bearer <token>`.
-2. The Worker hashes the token (`SHA-256`) and looks up `nodes.token_hash`.
-   The table is small (one row per server), so this is a sequential scan; add an
-   index if you ever monitor thousands of hosts.
-3. The metrics sample is validated and coerced: every numeric field defaults to `0`,
-   so a partial payload never produces `null`s in the database.
-4. One row is written to `metrics` (primary key `(node_id, ts)`), and the denormalised
-   `nodes.latest` / `online` / `last_seen` columns are updated in the same batch.
-5. Any probe result whose `name + target` is unknown becomes a new `ping_tasks` row for
-   that node, so operators can start measuring simply by editing the agent config.
-6. The response carries the server's `report_interval` and the node's enabled probes,
-   which the agent executes before its next report.
+1. `POST /api/v1/report` 到达，携带 `Authorization: Bearer <token>`。
+2. Worker 对令牌做哈希（`SHA-256`），再查找 `nodes.token_hash`。
+   该表很小（每台服务器一行），因此这是一次顺序扫描；如果将来要监控
+   上千台主机，请加索引。
+3. 对指标采样做校验与强制转换：每个数值字段默认取 `0`，
+   因此不完整的载荷永远不会在数据库中产生 `null`。
+4. 向 `metrics` 写入一行（主键 `(node_id, ts)`），并在同一批次中更新
+   反范式（冗余存储）的 `nodes.latest` / `online` / `last_seen` 列。
+5. 任何 `name + target` 未知的探测结果，都会为该节点新建一行 `ping_tasks`，
+   因此运维人员只需修改 Agent 配置就能开始测量。
+6. 响应中携带服务器的 `report_interval` 与该节点启用的探测任务，
+   Agent 会在下次上报之前执行它们。
 
-Step 4 is deliberately denormalised: the dashboard reads one row per node instead of
-running a correlated subquery over `metrics` for every card.
+第 4 步是刻意反范式（冗余存储）的：仪表盘每张卡片只读一行节点数据，
+而不必对 `metrics` 跑相关子查询。
 
-### Dashboard read
+### 仪表盘读取
 
-`GET /api/nodes` performs a single `SELECT … FROM nodes ORDER BY sort_order, created_at`,
-parses the `latest` JSON blob, computes percentages, and returns everything the grid
-needs. `GET /api/nodes/:id/metrics` runs the time-series query, with server-side
-downsampling (see below).
+`GET /api/nodes` 执行一条 `SELECT … FROM nodes ORDER BY sort_order, created_at`，
+解析 `latest` JSON blob，计算百分比，并返回网格所需的全部数据。
+`GET /api/nodes/:id/metrics` 运行时间序列查询，并在服务端做降采样（见下文）。
 
-## Data model
+## 数据模型
 
-| Table | Purpose | Growth |
+| 表 | 用途 | 增长量级 |
 | --- | --- | --- |
-| `nodes` | One row per server: identity, token hash, grouping, denormalised latest state | O(servers) |
-| `metrics` | One row per report per node | O(servers × reports/day × retention) |
-| `ping_tasks` | Probe definitions | O(servers × probes) |
-| `ping_records` | One row per probe execution | O(probes × executions/day × retention) |
-| `users` / `sessions` | Admin accounts and cookie sessions | tiny |
-| `settings` | Key/value site configuration | tiny |
-| `audit_logs` | Every admin mutation | tiny |
+| `nodes` | 每台服务器一行：身份、令牌哈希、分组、反范式（冗余存储）的最新状态 | O(servers) |
+| `metrics` | 每个节点每次上报一行 | O(servers × reports/day × retention) |
+| `ping_tasks` | 探测任务定义 | O(servers × probes) |
+| `ping_records` | 每次探测执行一行 | O(probes × executions/day × retention) |
+| `users` / `sessions` | 管理员账号与 cookie 会话 | tiny |
+| `settings` | 键／值形式的站点配置 | tiny |
+| `audit_logs` | 每一次管理员变更 | tiny |
 
-`metrics` uses `WITHOUT ROWID` with a composite primary key `(node_id, ts)`; range
-scans by node and time are index-only, which is what the history endpoint needs.
-A secondary index on `ts` supports the retention delete.
+`metrics` 使用 `WITHOUT ROWID` 与复合主键 `(node_id, ts)`；按节点和时间做范围
+扫描是仅索引扫描，这正是历史接口需要的。`ts` 上的二级索引用于支持保留期删除。
 
-### Time and units
+### 时间与单位
 
-- Every timestamp is a Unix epoch in **seconds** (`INTEGER`).
-- Byte counts are **bytes**; rates are **bytes per second**; percentages are **0–100**.
-- `net_in` / `net_out` are cumulative counters since boot, which is why the
-  downsampler aggregates them with `MAX` while averaging the gauges.
+- 每个时间戳都是 Unix 纪元**秒**（`INTEGER`）。
+- 字节数单位为**字节**；速率单位为**字节每秒**；百分比取值为 **0–100**。
+- `net_in` / `net_out` 是自启动以来的累计计数器，因此降采样器用 `MAX`
+  聚合它们，而对仪表值取平均。
 
-## Downsampling
+## 降采样
 
-Rendering 24 hours at a 30-second interval would mean 2 880 points — too many to draw
-and too many to ship. The rule (contract §3.1):
+以 30 秒间隔渲染 24 小时意味着 2 880 个点 —— 画不下，也传不动。
+规则如下（接口契约 §3.1）：
 
 ```
 hours <= 6   → raw rows
@@ -111,84 +109,81 @@ hours  > 6   → step = ceil(hours * 3600 / 360)
                MAX(net_in, net_out)
 ```
 
-The cap of 360 points keeps the largest response under ~40 KB while still resolving
-5-minute features over a week.
+360 个点的上限使最大响应保持在约 40 KB 以内，同时在一周的跨度上仍能分辨
+5 分钟级别的特征。
 
-## Retention and the offline sweep
+## 保留期与离线清理任务
 
-A cron trigger (`*/5 * * * *`) runs `scheduled()`:
+定时触发器（`*/5 * * * *`）运行 `scheduled()`：
 
 1. `DELETE FROM metrics WHERE ts < now - retention_days*86400`
 2. `DELETE FROM ping_records WHERE ts < now - ping_retention_days*86400`
 3. `DELETE FROM sessions WHERE expires_at < now`
 
-There is deliberately **no** "mark offline" step. A node's online state is derived
-from `last_seen` at read time (`isOnline()` in `db.ts`), so storing a flag would
-create a second source of truth that could disagree with the first — and it would
-cost a full-table `UPDATE` every five minutes. The `online` field in API responses
-is always computed, never read from a column.
+这里刻意**没有**「标记离线」这一步。节点的在线状态在读取时由 `last_seen`
+推导（`db.ts` 中的 `isOnline()`），因此存储一个标志位会造出第二个事实来源，
+可能与第一个不一致 —— 而且每五分钟就要付一次全表 `UPDATE` 的代价。
+API 响应中的 `online` 字段始终是计算出来的，从不从某一列读取。
 
-Deletes are chunked because D1 rejects statements with more than 100 bound parameters.
-The same code is exposed as `POST /api/admin/sweep` for manual runs and for tests.
+删除操作分批执行，因为 D1 拒绝绑定参数超过 100 个的语句。
+同一段代码通过 `POST /api/admin/sweep` 暴露，用于手动执行与测试。
 
-## Security model
+## 安全模型
 
-| Concern | Decision |
+| 关注点 | 决策 |
 | --- | --- |
-| Passwords | PBKDF2-SHA256, 100 000 iterations, 16-byte random salt, 32-byte derived key, constant-time compare |
-| Sessions | 32 random bytes, stored server-side in `sessions`, `HttpOnly; SameSite=Lax; Secure` cookie, 7-day TTL |
-| Agent tokens | 32 random bytes (64 hex); only `SHA-256` is stored. The plaintext is displayed once, and `token_hint` (first 8 chars) is kept for the UI |
-| CSRF | `SameSite=Lax` on the session cookie is the effective control. CORS reflects any request `Origin` with credentials (so the panel works from a custom domain), which means a preflight is *not* a CSRF defence — do not rely on the content-type check |
-| Brute force | Login limited to 10 attempts / 5 min / IP (in-memory per isolate — best effort, documented) |
-| Enumeration | Hidden nodes 404 for anonymous callers, and are excluded from public counts |
-| Auditability | Every admin mutation records actor, action, target, IP |
+| 密码 | PBKDF2-SHA256，100 000 次迭代，16 字节随机盐值，32 字节派生密钥，常量时间比较 |
+| 会话 | 32 个随机字节，服务端存储在 `sessions` 中，`HttpOnly; SameSite=Lax; Secure` cookie，TTL 7 天 |
+| Agent 令牌 | 32 个随机字节（64 位十六进制）；只存储 `SHA-256`。明文仅展示一次，并保留 `token_hint`（前 8 个字符）供 UI 使用 |
+| CSRF | 会话 cookie 上的 `SameSite=Lax` 才是实际有效的控制手段。CORS 会带着凭据回显任意请求的 `Origin`（这样面板才能在自定义域名下工作），这意味着预检请求*不是* CSRF 防御 —— 不要依赖 content-type 检查 |
+| 暴力破解 | 登录限制为 10 次尝试／5 分钟／IP（按 isolate 内存计数 —— 尽力而为，已记录在案） |
+| 枚举探测 | 隐藏节点对匿名调用者返回 404，且不计入公开统计 |
+| 可审计性 | 每一次管理员变更都记录操作者、动作、目标、IP |
 
-Token hashing is the important one: a leaked D1 backup does not let an attacker
-impersonate agents.
+令牌哈希是最关键的一环：泄露的 D1 备份无法让攻击者冒充 Agent。
 
-## Design trade-offs
+## 设计取舍
 
-**Why D1 and not Workers KV / R2 / Durable Objects?**
-The workload is relational and query-heavy (range scans, aggregates, joins for
-counts). D1 is SQLite with a real query planner, so `GROUP BY`/`AVG` downsampling
-happens next to the data. KV has no queries; R2 has no cheap small-row reads;
-Durable Objects would be over-engineered and priced per request.
+**为什么选 D1，而不是 Workers KV / R2 / Durable Objects？**
+该工作负载是关系型的、查询密集的（范围扫描、聚合、用于计数的 join）。
+D1 是带真正查询规划器的 SQLite，因此 `GROUP BY`/`AVG` 降采样就在数据旁边完成。
+KV 没有查询能力；R2 读取小行数据的成本不低；
+Durable Objects 属于过度设计，且按请求计费。
 
-**Why a pull-style probe model?**
-The server tells the agent which probes to run on each report (`pings` in the
-response). Adding a probe requires no agent restart and no inbound connection to the
-monitored host — important when the box is behind NAT.
+**为什么采用拉取式探测模型？**
+服务器在每次上报时告诉 Agent 要运行哪些探测任务（响应中的 `pings`）。
+新增探测任务无需重启 Agent，也无需向被监控主机建立入站连接 ——
+当机器位于 NAT 之后时这一点很重要。
 
-**Why denormalise `nodes.latest`?**
-The dashboard is read far more often than it is written. One row per node makes the
-main page a single indexed scan instead of N correlated subqueries.
+**为什么反范式（冗余存储）`nodes.latest`？**
+仪表盘的读取频率远高于写入频率。每节点一行让主页面只需一次索引扫描，
+而不是 N 次相关子查询。
 
-**Why no ORM?**
-The schema is nine tables. Hand-written prepared statements in `db.ts` are easier to
-audit and produce exactly the SQL D1 executes — no surprise N+1s.
+**为什么不用 ORM？**
+表结构一共九张表。`db.ts` 中手写的预编译语句更易于审计，
+并且产生的 SQL 与 D1 实际执行的完全一致 —— 不会有意外的 N+1。
 
-**Why `run_worker_first = true`?**
-The HTML shell must pass through the Worker so the `custom_head` setting can be
-injected before `</head>`. Static assets are still served straight from the edge by
-the binding, and the settings lookup only happens for `text/html` responses — JS and
-CSS requests cost one internal fetch and no D1 query.
+**为什么 `run_worker_first = true`？**
+HTML 外壳必须经过 Worker，这样 `custom_head` 设置才能在 `</head>` 之前注入。
+静态资源仍由绑定直接从边缘提供，并且设置查询只对 `text/html` 响应发生 ——
+JS 与 CSS 请求只花费一次内部 fetch，且不产生 D1 查询。
 
-## Extension points
+## 扩展点
 
-- **Alerting.** `scheduled()` already sweeps for offline nodes — hook a webhook or
-  Telegram bot there.
-- **More collectors.** Add a field to `MetricSample`, a column to `metrics`, and a
-  series to `MetricSeries`. The downsampler table is the only other place to touch.
-- **Status pages.** `/api/status` and `/api/nodes` are unauthenticated; a static
-  page anywhere can render them.
-- **Multiple regions.** `nodes.region` and `nodes.group_name` already exist; a region
-  filter in the dashboard is a UI-only change.
+- **告警。** `scheduled()` 已经在清理离线节点 —— 在那里挂一个 webhook 或
+  Telegram 机器人即可。
+- **更多采集项。** 给 `MetricSample` 加一个字段，给 `metrics` 加一列，给
+  `MetricSeries` 加一条序列。降采样表是另一处需要改动的地方。
+- **状态页。** `/api/status` 与 `/api/nodes` 无需认证；任何地方的静态页面
+  都可以渲染它们。
+- **多地区。** `nodes.region` 与 `nodes.group_name` 已经存在；在仪表盘里加一个
+  地区筛选只是 UI 改动。
 
-## Verification strategy
+## 验证策略
 
-| Layer | How it is checked |
+| 层次 | 检查方式 |
 | --- | --- |
-| Worker | `vitest` with `@cloudflare/vitest-pool-workers` runs the real Worker against a real (in-memory) D1, covering ingest → dashboard → history → admin CRUD → auth failures |
-| SPA | `tsc --noEmit` + `vite build` in CI |
-| Agent | `go vet`, `go build`, and a cross-compile matrix in CI; `-once` prints a real payload without network |
-| Integration | The Lead runs `wrangler dev` locally, posts a report with `curl`, and confirms the node appears online in `/api/nodes` |
+| Worker | 用 `vitest` 与 `@cloudflare/vitest-pool-workers` 对真实的（内存中）D1 运行真实 Worker，覆盖上报接收 → 仪表盘 → 历史 → 管理员 CRUD → 认证失败 |
+| SPA | CI 中执行 `tsc --noEmit` + `vite build` |
+| Agent | CI 中执行 `go vet`、`go build` 以及交叉编译矩阵；`-once` 无需网络即可打印真实载荷 |
+| 集成 | Lead 在本地运行 `wrangler dev`，用 `curl` 提交一次上报，并确认该节点在 `/api/nodes` 中显示为在线 |
