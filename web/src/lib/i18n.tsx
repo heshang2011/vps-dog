@@ -1,0 +1,695 @@
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from 'react';
+
+export type Lang = 'zh-CN' | 'en';
+
+export const LANG_STORAGE_KEY = 'vpsdog.lang';
+
+export const LANGS: ReadonlyArray<{ value: Lang; label: string; short: string }> = [
+  { value: 'en', label: 'English', short: 'EN' },
+  { value: 'zh-CN', label: '简体中文', short: '中' },
+];
+
+/* ── dictionaries ─────────────────────────────────────────────────────────
+   `en` is the source of truth: `zh-CN` must cover exactly the same keys. */
+
+const en = {
+  'app.name': 'VPS-DOG',
+  'app.tagline': 'Lightweight server monitoring',
+
+  'nav.dashboard': 'Dashboard',
+  'nav.admin': 'Admin',
+  'nav.login': 'Sign in',
+  'nav.logout': 'Sign out',
+  'nav.theme': 'Theme',
+  'nav.language': 'Language',
+  'nav.toggleTheme': 'Toggle theme',
+  'nav.switchLanguage': 'Switch language',
+  'nav.menu': 'Menu',
+  'nav.close': 'Close',
+
+  'theme.auto': 'Auto',
+  'theme.light': 'Light',
+  'theme.dark': 'Dark',
+
+  'status.online': 'Online',
+  'status.offline': 'Offline',
+  'status.total': 'Total',
+  'status.nodes': 'Nodes',
+  'status.allSystems': 'All systems operational',
+  'status.degraded': 'Partial outage',
+  'status.down': 'Major outage',
+  'status.noNodes': 'No nodes',
+  'status.updated': 'Updated',
+  'status.live': 'Live',
+
+  'dashboard.search': 'Search nodes…',
+  'dashboard.searchLabel': 'Search nodes by name, group, region or tag',
+  'dashboard.allGroups': 'All groups',
+  'dashboard.groupLabel': 'Filter by group',
+  'dashboard.empty': 'No nodes yet',
+  'dashboard.emptyHint':
+    'Install the agent on a server and register it in the admin panel to see it here.',
+  'dashboard.noMatch': 'Nothing matches your filters',
+  'dashboard.noMatchHint': 'Try a different search term or group.',
+  'dashboard.clearFilters': 'Clear filters',
+  'dashboard.loading': 'Loading nodes…',
+  'dashboard.showHidden': 'Show hidden',
+  'dashboard.autoRefresh': 'Auto-refresh every {seconds}s',
+  'dashboard.generatedAt': 'Generated at',
+
+  'node.cpu': 'CPU',
+  'node.mem': 'Memory',
+  'node.disk': 'Disk',
+  'node.swap': 'Swap',
+  'node.load': 'Load',
+  'node.load1': 'Load (1m)',
+  'node.load5': 'Load (5m)',
+  'node.load15': 'Load (15m)',
+  'node.uptime': 'Uptime',
+  'node.rx': 'Download',
+  'node.tx': 'Upload',
+  'node.rxRate': 'Download rate',
+  'node.txRate': 'Upload rate',
+  'node.net': 'Network',
+  'node.traffic': 'Traffic',
+  'node.trafficIn': 'Total received',
+  'node.trafficOut': 'Total sent',
+  'node.tcp': 'TCP conns',
+  'node.udp': 'UDP conns',
+  'node.process': 'Processes',
+  'node.lastSeen': 'Last seen',
+  'node.region': 'Region',
+  'node.group': 'Group',
+  'node.tags': 'Tags',
+  'node.created': 'Created',
+  'node.never': 'never',
+  'node.offline': 'Offline',
+  'node.viewDetails': 'View details for {name}',
+  'node.noMetrics': 'No metrics reported yet',
+
+  'detail.back': 'Back to dashboard',
+  'detail.overview': 'Overview',
+  'detail.history': 'History',
+  'detail.pings': 'Latency probes',
+  'detail.range': 'Range',
+  'detail.range.1h': '1 hour',
+  'detail.range.6h': '6 hours',
+  'detail.range.24h': '24 hours',
+  'detail.range.7d': '7 days',
+  'detail.rangeLabel': 'Time range',
+  'detail.range.1h.short': '1h',
+  'detail.range.6h.short': '6h',
+  'detail.range.24h.short': '24h',
+  'detail.range.7d.short': '7d',
+  'detail.notFound': 'Node not found',
+  'detail.notFoundHint': 'This node may have been deleted or is hidden from public view.',
+  'detail.loading': 'Loading node…',
+  'detail.autoRefresh': 'Refreshing every {seconds} seconds',
+  'detail.step': 'Bucket',
+  'detail.points': 'Points',
+  'detail.noHistory': 'No history in this range',
+  'detail.noHistoryHint': 'Metrics are retained for a limited number of days.',
+
+  'chart.cpuMem': 'CPU & memory',
+  'chart.netRate': 'Network rate',
+  'chart.load': 'Load average',
+  'chart.traffic': 'Cumulative traffic',
+  'chart.disk': 'Disk usage',
+  'chart.empty': 'No data for this range',
+
+  'ping.name': 'Name',
+  'ping.type': 'Type',
+  'ping.target': 'Target',
+  'ping.interval': 'Interval',
+  'ping.latest': 'Latest',
+  'ping.avg': 'Avg 24h',
+  'ping.loss': 'Loss 24h',
+  'ping.trend': 'Trend',
+  'ping.status': 'Status',
+  'ping.empty': 'No probes configured for this node',
+  'ping.emptyHint': 'Add a probe task in the admin panel to measure latency.',
+  'ping.ok': 'Reachable',
+  'ping.fail': 'Failed',
+  'ping.enabled': 'Enabled',
+  'ping.disabled': 'Disabled',
+  'ping.seconds': '{count}s',
+
+  'common.loading': 'Loading…',
+  'common.error': 'Something went wrong',
+  'common.retry': 'Retry',
+  'common.save': 'Save',
+  'common.saving': 'Saving…',
+  'common.cancel': 'Cancel',
+  'common.close': 'Close',
+  'common.delete': 'Delete',
+  'common.edit': 'Edit',
+  'common.create': 'Create',
+  'common.confirm': 'Confirm',
+  'common.copy': 'Copy',
+  'common.copied': 'Copied',
+  'common.copyFailed': 'Copy failed',
+  'common.actions': 'Actions',
+  'common.name': 'Name',
+  'common.status': 'Status',
+  'common.yes': 'Yes',
+  'common.no': 'No',
+  'common.none': 'None',
+  'common.optional': 'optional',
+  'common.required': 'required',
+  'common.all': 'All',
+  'common.id': 'ID',
+  'common.time': 'Time',
+  'common.user': 'User',
+  'common.detail': 'Detail',
+  'common.ip': 'IP',
+  'common.action': 'Action',
+  'common.target': 'Target',
+  'common.apply': 'Apply',
+  'common.reset': 'Reset',
+  'common.refresh': 'Refresh',
+  'common.hidden': 'Hidden',
+  'common.visible': 'Visible',
+  'common.never': 'Never',
+  'common.unlimited': 'Unlimited',
+
+  'error.title': 'Request failed',
+  'error.unauthorized': 'Your session expired. Please sign in again.',
+  'error.forbidden': 'You do not have permission to do that.',
+  'error.notFound': 'Not found',
+  'error.network': 'Cannot reach the server. Check your connection.',
+
+  'notFound.title': 'Page not found',
+  'notFound.hint': 'The page you are looking for does not exist.',
+  'notFound.home': 'Go to dashboard',
+
+  'login.title': 'Admin sign in',
+  'login.subtitle': 'Sign in to manage nodes, probes and settings.',
+  'login.username': 'Username',
+  'login.password': 'Password',
+  'login.submit': 'Sign in',
+  'login.submitting': 'Signing in…',
+  'login.failed': 'Sign in failed',
+  'login.bootstrap': 'Initial admin account created — welcome!',
+  'login.rateLimited': 'Too many attempts. Please wait a few minutes and try again.',
+  'login.defaultHint': 'First run? Sign in with the password from your worker secret.',
+
+  'admin.title': 'Administration',
+  'admin.dashboard': 'Overview',
+  'admin.nodes': 'Nodes',
+  'admin.pings': 'Probes',
+  'admin.settings': 'Settings',
+  'admin.users': 'Users',
+  'admin.audit': 'Audit log',
+  'admin.signedInAs': 'Signed in as {name}',
+  'admin.backToSite': 'Back to site',
+  'admin.overview.nodes': 'Nodes',
+  'admin.overview.online': 'Online',
+  'admin.overview.offline': 'Offline',
+  'admin.overview.rows': 'Metric rows',
+  'admin.overview.oldest': 'Oldest sample',
+  'admin.overview.d1': 'D1 size',
+
+  'admin.readOnly': 'Read-only account',
+  'admin.readOnlyHint': 'Your role is viewer, so changes are disabled.',
+
+  'admin.nodes.title': 'Nodes',
+  'admin.nodes.subtitle': 'Register servers, issue agent tokens and control visibility.',
+  'admin.nodes.add': 'Add node',
+  'admin.nodes.create': 'Create node',
+
+  'admin.nodes.edit': 'Edit node',
+  'admin.nodes.name': 'Name',
+  'admin.nodes.group': 'Group',
+  'admin.nodes.region': 'Region',
+  'admin.nodes.tags': 'Tags',
+  'admin.nodes.tagsHint': 'Comma separated',
+  'admin.nodes.hidden': 'Hidden from public list',
+  'admin.nodes.sortOrder': 'Sort order',
+  'admin.nodes.tokenHint': 'Token',
+  'admin.nodes.rotate': 'Rotate token',
+  'admin.nodes.rotateConfirm': 'Rotate the token for “{name}”? The current agent will stop reporting until reconfigured.',
+  'admin.nodes.deleteConfirm': 'Delete “{name}” and all of its metrics and probes?',
+  'admin.nodes.empty': 'No nodes registered yet',
+  'admin.nodes.emptyHint': 'Create a node to get an agent token.',
+  'admin.nodes.moveUp': 'Move up',
+  'admin.nodes.moveDown': 'Move down',
+  'admin.nodes.show': 'Show',
+  'admin.nodes.hide': 'Hide',
+  'admin.nodes.tokenOnce': 'Copy this token now — it is shown only once.',
+  'admin.nodes.tokenFor': 'Agent token for {name}',
+  'admin.nodes.installHint': 'Install the agent on the server and pass this token.',
+
+  'admin.pings.title': 'Probe tasks',
+  'admin.pings.subtitle': 'Latency probes the agent runs and reports back.',
+  'admin.pings.add': 'Add probe',
+  'admin.pings.create': 'Create probe',
+  'admin.pings.edit': 'Edit probe',
+  'admin.pings.node': 'Node',
+  'admin.pings.filterNode': 'Filter by node',
+  'admin.pings.allNodes': 'All nodes',
+  'admin.pings.name': 'Name',
+  'admin.pings.type': 'Type',
+  'admin.pings.target': 'Target',
+  'admin.pings.targetHint': 'host, host:port or https://url',
+  'admin.pings.interval': 'Interval (s)',
+  'admin.pings.enabled': 'Enabled',
+  'admin.pings.empty': 'No probe tasks',
+  'admin.pings.emptyHint': 'Create a probe task for a node to start collecting latency.',
+  'admin.pings.deleteConfirm': 'Delete probe “{name}”?',
+
+  'admin.settings.title': 'Settings',
+  'admin.settings.subtitle': 'Site identity, reporting cadence and retention.',
+  'admin.settings.siteName': 'Site name',
+  'admin.settings.siteDescription': 'Site description',
+  'admin.settings.reportInterval': 'Report interval (s)',
+  'admin.settings.offlineAfter': 'Offline after (s)',
+  'admin.settings.retentionDays': 'Metric retention (days)',
+  'admin.settings.pingRetentionDays': 'Ping retention (days)',
+  'admin.settings.theme': 'Default theme',
+  'admin.settings.customHead': 'Custom <head> HTML',
+  'admin.settings.customHeadHint': 'Injected verbatim into the document head.',
+  'admin.settings.saved': 'Settings saved',
+
+  'admin.users.title': 'Users',
+  'admin.users.subtitle': 'Accounts that can sign in to the admin panel.',
+  'admin.users.add': 'Add user',
+  'admin.users.create': 'Create user',
+  'admin.users.username': 'Username',
+  'admin.users.password': 'Password',
+  'admin.users.role': 'Role',
+  'admin.users.role.admin': 'Administrator',
+  'admin.users.role.viewer': 'Viewer',
+  'admin.users.created': 'Created',
+  'admin.users.empty': 'No users',
+  'admin.users.emptyHint': 'Create an account to grant access.',
+  'admin.users.deleteConfirm': 'Delete user “{name}”?',
+  'admin.users.you': 'you',
+
+  'admin.audit.title': 'Audit log',
+  'admin.audit.subtitle': 'Every mutating admin action is recorded here.',
+  'admin.audit.empty': 'No audit entries yet',
+  'admin.audit.emptyHint': 'Actions you take in the admin panel will show up here.',
+  'admin.audit.limit': 'Show last {count}',
+
+  'toast.saved': 'Saved',
+  'toast.created': 'Created',
+  'toast.deleted': 'Deleted',
+  'toast.updated': 'Updated',
+  'toast.copied': 'Copied to clipboard',
+} as const;
+
+export type TranslationKey = keyof typeof en;
+
+const zhCN: Record<TranslationKey, string> = {
+  'app.name': 'VPS-DOG',
+  'app.tagline': '轻量级服务器监控',
+
+  'nav.dashboard': '仪表盘',
+  'nav.admin': '管理',
+  'nav.login': '登录',
+  'nav.logout': '退出登录',
+  'nav.theme': '主题',
+  'nav.language': '语言',
+  'nav.toggleTheme': '切换主题',
+  'nav.switchLanguage': '切换语言',
+  'nav.menu': '菜单',
+  'nav.close': '关闭',
+
+  'theme.auto': '跟随系统',
+  'theme.light': '浅色',
+  'theme.dark': '深色',
+
+  'status.online': '在线',
+  'status.offline': '离线',
+  'status.total': '总计',
+  'status.nodes': '节点',
+  'status.allSystems': '所有系统运行正常',
+  'status.degraded': '部分节点异常',
+  'status.down': '大面积故障',
+  'status.noNodes': '暂无节点',
+  'status.updated': '更新于',
+  'status.live': '实时',
+
+  'dashboard.search': '搜索节点…',
+  'dashboard.searchLabel': '按名称、分组、地区或标签搜索节点',
+  'dashboard.allGroups': '全部分组',
+  'dashboard.groupLabel': '按分组筛选',
+  'dashboard.empty': '还没有节点',
+  'dashboard.emptyHint': '在服务器上安装探针并在管理面板中注册后即可在此查看。',
+  'dashboard.noMatch': '没有匹配的节点',
+  'dashboard.noMatchHint': '请尝试其他关键词或分组。',
+  'dashboard.clearFilters': '清除筛选',
+  'dashboard.loading': '正在加载节点…',
+  'dashboard.showHidden': '显示隐藏节点',
+  'dashboard.autoRefresh': '每 {seconds} 秒自动刷新',
+  'dashboard.generatedAt': '数据生成于',
+
+  'node.cpu': 'CPU',
+  'node.mem': '内存',
+  'node.disk': '磁盘',
+  'node.swap': '交换分区',
+  'node.load': '负载',
+  'node.load1': '负载 (1分钟)',
+  'node.load5': '负载 (5分钟)',
+  'node.load15': '负载 (15分钟)',
+  'node.uptime': '运行时长',
+  'node.rx': '下行',
+  'node.tx': '上行',
+  'node.rxRate': '下行速率',
+  'node.txRate': '上行速率',
+  'node.net': '网络',
+  'node.traffic': '流量',
+  'node.trafficIn': '累计接收',
+  'node.trafficOut': '累计发送',
+  'node.tcp': 'TCP 连接',
+  'node.udp': 'UDP 连接',
+  'node.process': '进程数',
+  'node.lastSeen': '最后上报',
+  'node.region': '地区',
+  'node.group': '分组',
+  'node.tags': '标签',
+  'node.created': '创建时间',
+  'node.never': '从未',
+  'node.offline': '离线',
+  'node.viewDetails': '查看 {name} 的详情',
+  'node.noMetrics': '尚未上报监控数据',
+
+  'detail.back': '返回仪表盘',
+  'detail.overview': '概览',
+  'detail.history': '历史曲线',
+  'detail.pings': '延迟探测',
+  'detail.range': '时间范围',
+  'detail.range.1h': '1 小时',
+  'detail.range.6h': '6 小时',
+  'detail.range.24h': '24 小时',
+  'detail.range.7d': '7 天',
+  'detail.rangeLabel': '时间范围',
+  'detail.range.1h.short': '1小时',
+  'detail.range.6h.short': '6小时',
+  'detail.range.24h.short': '24小时',
+  'detail.range.7d.short': '7天',
+  'detail.notFound': '未找到该节点',
+  'detail.notFoundHint': '该节点可能已被删除，或未公开显示。',
+  'detail.loading': '正在加载节点…',
+  'detail.autoRefresh': '数据每 {seconds} 秒自动刷新',
+  'detail.step': '聚合粒度',
+  'detail.points': '数据点',
+  'detail.noHistory': '该时间段暂无数据',
+  'detail.noHistoryHint': '监控数据仅保留有限天数。',
+
+  'chart.cpuMem': 'CPU 与内存',
+  'chart.netRate': '网络速率',
+  'chart.load': '平均负载',
+  'chart.traffic': '累计流量',
+  'chart.disk': '磁盘使用率',
+  'chart.empty': '该时间段暂无数据',
+
+  'ping.name': '名称',
+  'ping.type': '类型',
+  'ping.target': '目标',
+  'ping.interval': '间隔',
+  'ping.latest': '最新',
+  'ping.avg': '24h 平均',
+  'ping.loss': '24h 丢包',
+  'ping.trend': '趋势',
+  'ping.status': '状态',
+  'ping.empty': '该节点暂无探测任务',
+  'ping.emptyHint': '在管理面板中创建探测任务以测量延迟。',
+  'ping.ok': '正常',
+  'ping.fail': '失败',
+  'ping.enabled': '已启用',
+  'ping.disabled': '已停用',
+  'ping.seconds': '{count} 秒',
+
+  'common.loading': '加载中…',
+  'common.error': '出错了',
+  'common.retry': '重试',
+  'common.save': '保存',
+  'common.saving': '保存中…',
+  'common.cancel': '取消',
+  'common.close': '关闭',
+  'common.delete': '删除',
+  'common.edit': '编辑',
+  'common.create': '创建',
+  'common.confirm': '确认',
+  'common.copy': '复制',
+  'common.copied': '已复制',
+  'common.copyFailed': '复制失败',
+  'common.actions': '操作',
+  'common.name': '名称',
+  'common.status': '状态',
+  'common.yes': '是',
+  'common.no': '否',
+  'common.none': '无',
+  'common.optional': '可选',
+  'common.required': '必填',
+  'common.all': '全部',
+  'common.id': 'ID',
+  'common.time': '时间',
+  'common.user': '用户',
+  'common.detail': '详情',
+  'common.ip': 'IP',
+  'common.action': '操作',
+  'common.target': '目标',
+  'common.apply': '应用',
+  'common.reset': '重置',
+  'common.refresh': '刷新',
+  'common.hidden': '已隐藏',
+  'common.visible': '可见',
+  'common.never': '从未',
+  'common.unlimited': '不限',
+
+  'error.title': '请求失败',
+  'error.unauthorized': '登录状态已失效，请重新登录。',
+  'error.forbidden': '你没有执行该操作的权限。',
+  'error.notFound': '未找到',
+  'error.network': '无法连接服务器，请检查网络。',
+
+  'notFound.title': '页面不存在',
+  'notFound.hint': '你访问的页面不存在。',
+  'notFound.home': '返回仪表盘',
+
+  'login.title': '管理员登录',
+  'login.subtitle': '登录后可管理节点、探测任务与站点设置。',
+  'login.username': '用户名',
+  'login.password': '密码',
+  'login.submit': '登录',
+  'login.submitting': '登录中…',
+  'login.failed': '登录失败',
+  'login.bootstrap': '已创建初始管理员账号，欢迎使用！',
+  'login.rateLimited': '尝试次数过多，请等待几分钟后重试。',
+  'login.defaultHint': '首次使用？请使用 Worker 密钥中配置的密码登录。',
+
+  'admin.title': '管理后台',
+  'admin.dashboard': '概览',
+  'admin.nodes': '节点',
+  'admin.pings': '探测任务',
+  'admin.settings': '设置',
+  'admin.users': '用户',
+  'admin.audit': '审计日志',
+  'admin.signedInAs': '当前登录：{name}',
+  'admin.backToSite': '返回站点',
+  'admin.overview.nodes': '节点总数',
+  'admin.overview.online': '在线',
+  'admin.overview.offline': '离线',
+  'admin.overview.rows': '监控数据行',
+  'admin.overview.oldest': '最早数据',
+  'admin.overview.d1': 'D1 体积',
+
+  'admin.readOnly': '只读账号',
+  'admin.readOnlyHint': '当前角色为只读用户，修改功能已禁用。',
+
+  'admin.nodes.title': '节点管理',
+  'admin.nodes.subtitle': '注册服务器、发放 Agent 令牌并控制可见性。',
+  'admin.nodes.add': '添加节点',
+  'admin.nodes.create': '创建节点',
+  'admin.nodes.edit': '编辑节点',
+  'admin.nodes.name': '名称',
+  'admin.nodes.group': '分组',
+  'admin.nodes.region': '地区',
+  'admin.nodes.tags': '标签',
+  'admin.nodes.tagsHint': '使用英文逗号分隔',
+  'admin.nodes.hidden': '在公开列表中隐藏',
+  'admin.nodes.sortOrder': '排序值',
+  'admin.nodes.tokenHint': '令牌',
+  'admin.nodes.rotate': '重置令牌',
+  'admin.nodes.rotateConfirm': '确定重置“{name}”的令牌？在重新配置之前该探针将无法上报。',
+  'admin.nodes.deleteConfirm': '确定删除“{name}”及其全部监控数据与探测任务？',
+  'admin.nodes.empty': '还没有注册节点',
+  'admin.nodes.emptyHint': '创建一个节点即可获取 Agent 令牌。',
+  'admin.nodes.moveUp': '上移',
+  'admin.nodes.moveDown': '下移',
+  'admin.nodes.show': '显示',
+  'admin.nodes.hide': '隐藏',
+  'admin.nodes.tokenOnce': '请立即复制该令牌——它只会显示一次。',
+  'admin.nodes.tokenFor': '{name} 的 Agent 令牌',
+  'admin.nodes.installHint': '在服务器上安装探针时填入该令牌。',
+
+  'admin.pings.title': '探测任务',
+  'admin.pings.subtitle': '由探针执行并回传的延迟探测。',
+  'admin.pings.add': '添加探测',
+  'admin.pings.create': '创建探测',
+  'admin.pings.edit': '编辑探测',
+  'admin.pings.node': '节点',
+  'admin.pings.filterNode': '按节点筛选',
+  'admin.pings.allNodes': '全部节点',
+  'admin.pings.name': '名称',
+  'admin.pings.type': '类型',
+  'admin.pings.target': '目标',
+  'admin.pings.targetHint': '主机名、主机:端口 或 https://链接',
+  'admin.pings.interval': '间隔（秒）',
+  'admin.pings.enabled': '启用',
+  'admin.pings.empty': '暂无探测任务',
+  'admin.pings.emptyHint': '为节点创建探测任务即可开始采集延迟数据。',
+  'admin.pings.deleteConfirm': '确定删除探测“{name}”？',
+
+  'admin.settings.title': '站点设置',
+  'admin.settings.subtitle': '站点信息、上报频率与数据保留策略。',
+  'admin.settings.siteName': '站点名称',
+  'admin.settings.siteDescription': '站点描述',
+  'admin.settings.reportInterval': '上报间隔（秒）',
+  'admin.settings.offlineAfter': '离线判定（秒）',
+  'admin.settings.retentionDays': '监控数据保留（天）',
+  'admin.settings.pingRetentionDays': '延迟数据保留（天）',
+  'admin.settings.theme': '默认主题',
+  'admin.settings.customHead': '自定义 <head> HTML',
+  'admin.settings.customHeadHint': '将原样注入到文档 head 中。',
+  'admin.settings.saved': '设置已保存',
+
+  'admin.users.title': '用户管理',
+  'admin.users.subtitle': '可登录管理后台的账号。',
+  'admin.users.add': '添加用户',
+  'admin.users.create': '创建用户',
+  'admin.users.username': '用户名',
+  'admin.users.password': '密码',
+  'admin.users.role': '角色',
+  'admin.users.role.admin': '管理员',
+  'admin.users.role.viewer': '只读用户',
+  'admin.users.created': '创建时间',
+  'admin.users.empty': '暂无用户',
+  'admin.users.emptyHint': '创建一个账号以授予访问权限。',
+  'admin.users.deleteConfirm': '确定删除用户“{name}”？',
+  'admin.users.you': '当前账号',
+
+  'admin.audit.title': '审计日志',
+  'admin.audit.subtitle': '所有写操作都会被记录在此。',
+  'admin.audit.empty': '暂无审计记录',
+  'admin.audit.emptyHint': '你在管理后台的操作会显示在这里。',
+  'admin.audit.limit': '显示最近 {count} 条',
+
+  'toast.saved': '已保存',
+  'toast.created': '已创建',
+  'toast.deleted': '已删除',
+  'toast.updated': '已更新',
+  'toast.copied': '已复制到剪贴板',
+};
+
+const dictionaries: Record<Lang, Record<TranslationKey, string>> = {
+  en,
+  'zh-CN': zhCN,
+};
+
+export function isLang(value: unknown): value is Lang {
+  return value === 'en' || value === 'zh-CN';
+}
+
+/** `navigator.language` → supported language. */
+export function detectLang(): Lang {
+  if (typeof navigator === 'undefined') return 'en';
+  const candidates = [navigator.language, ...(navigator.languages ?? [])];
+  for (const candidate of candidates) {
+    if (typeof candidate !== 'string') continue;
+    if (candidate.toLowerCase().startsWith('zh')) return 'zh-CN';
+    if (candidate.toLowerCase().startsWith('en')) return 'en';
+  }
+  return 'en';
+}
+
+export function readStoredLang(): Lang {
+  try {
+    const stored = localStorage.getItem(LANG_STORAGE_KEY);
+    if (isLang(stored)) return stored;
+  } catch {
+    /* storage unavailable */
+  }
+  return detectLang();
+}
+
+export function storeLang(lang: Lang): void {
+  try {
+    localStorage.setItem(LANG_STORAGE_KEY, lang);
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+export type TranslateVars = Record<string, string | number>;
+
+/** Translate `key`, interpolating `{name}` placeholders from `vars`. */
+export function translate(lang: Lang, key: TranslationKey, vars?: TranslateVars): string {
+  const dict = dictionaries[lang] ?? en;
+  const template: string = dict[key] ?? en[key] ?? key;
+  if (!vars) return template;
+  return template.replace(/\{(\w+)\}/g, (match, name: string) => {
+    const value = vars[name];
+    return value === undefined ? match : String(value);
+  });
+}
+
+/* ── provider ─────────────────────────────────────────────────────────────── */
+
+export interface I18nContextValue {
+  lang: Lang;
+  setLang: (lang: Lang) => void;
+  toggleLang: () => void;
+  t: (key: TranslationKey, vars?: TranslateVars) => string;
+}
+
+const I18nContext = createContext<I18nContextValue | null>(null);
+
+export function I18nProvider({ children }: { children: ReactNode }): ReactNode {
+  const [lang, setLangState] = useState<Lang>(() => readStoredLang());
+
+  useEffect(() => {
+    document.documentElement.setAttribute('lang', lang);
+  }, [lang]);
+
+  const setLang = useCallback((next: Lang) => {
+    setLangState(next);
+    storeLang(next);
+  }, []);
+
+  const toggleLang = useCallback(() => {
+    setLangState((current) => {
+      const next: Lang = current === 'zh-CN' ? 'en' : 'zh-CN';
+      storeLang(next);
+      return next;
+    });
+  }, []);
+
+  const t = useCallback(
+    (key: TranslationKey, vars?: TranslateVars) => translate(lang, key, vars),
+    [lang],
+  );
+
+  const value = useMemo<I18nContextValue>(
+    () => ({ lang, setLang, toggleLang, t }),
+    [lang, setLang, toggleLang, t],
+  );
+
+  return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
+}
+
+export function useI18n(): I18nContextValue {
+  const ctx = useContext(I18nContext);
+  if (ctx === null) throw new Error('useI18n must be used inside <I18nProvider>');
+  return ctx;
+}

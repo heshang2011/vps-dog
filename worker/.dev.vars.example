@@ -1,0 +1,13 @@
+# Copy to `.dev.vars` for `wrangler dev` (git-ignored).
+# In production set these as Worker secrets: `wrangler secret put ADMIN_PASSWORD`
+
+# Password for the bootstrap `admin` account. Only used while the `users` table
+# is empty; if unset the default is "admin".
+ADMIN_PASSWORD=admin
+
+# PBKDF2-SHA256 iteration count for password hashing.
+# Production default (omit this variable) is 100000.
+# A low value is only useful to keep local dev / test logins fast.
+# AUTH_ITERATIONS=100000
+
+ENVIRONMENT=development

@@ -1,0 +1,138 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  worker:
+    name: Worker (typecheck + tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        # No `version` on purpose: the root package.json declares
+        # `packageManager: pnpm@11.22.0`, which is authoritative. Specifying both
+        # makes pnpm/action-setup fail with "Multiple versions of pnpm specified".
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        working-directory: worker
+        run: pnpm typecheck
+
+      - name: Test
+        working-directory: worker
+        run: pnpm test
+
+  web:
+    name: Web (typecheck + build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        # No `version` on purpose: the root package.json declares
+        # `packageManager: pnpm@11.22.0`, which is authoritative. Specifying both
+        # makes pnpm/action-setup fail with "Multiple versions of pnpm specified".
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        working-directory: web
+        run: pnpm typecheck
+
+      - name: Build
+        working-directory: web
+        run: pnpm build
+
+      - name: Upload SPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: web/dist
+          retention-days: 7
+
+  agent:
+    name: Agent (vet + build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          # The agent has zero external dependencies, so there is no go.sum to
+          # key the module cache on. `go.mod` is the only build input.
+          cache-dependency-path: agent/go.mod
+
+      - name: gofmt
+        working-directory: agent
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "These files are not gofmt-clean:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Vet
+        working-directory: agent
+        run: go vet ./...
+
+      - name: Build
+        working-directory: agent
+        run: go build ./...
+
+      - name: Smoke test (-once)
+        working-directory: agent
+        run: |
+          go run . -once | tee /tmp/sample.json
+          grep -q '"metrics"' /tmp/sample.json
+          grep -q '"cpu"' /tmp/sample.json
+
+      - name: Cross-compile matrix
+        working-directory: agent
+        run: |
+          set -e
+          for target in linux/amd64 linux/arm64 linux/arm linux/386 darwin/amd64 darwin/arm64 windows/amd64; do
+            os=${target%/*}; arch=${target#*/}
+            echo "→ $os/$arch"
+            GOOS=$os GOARCH=$arch CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /tmp/vps-dog-$os-$arch .
+          done
+
+  contract:
+    name: Contract files present
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Required files
+        run: |
+          set -e
+          for f in README.md LICENSE .gitignore docs/CONTRACT.md docs/API.md \
+                   docs/DEPLOYMENT.md docs/ARCHITECTURE.md docs/CONTRIBUTING.md \
+                   worker/wrangler.toml worker/migrations/0001_init.sql \
+                   agent/go.mod agent/install.sh; do
+            test -f "$f" || { echo "missing: $f"; exit 1; }
+            echo "ok: $f"
+          done

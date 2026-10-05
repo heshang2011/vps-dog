@@ -1,0 +1,26 @@
+# Test-only Wrangler config.
+#
+# Why this file exists: `wrangler.toml` declares `[assets] directory = "../web/dist"`.
+# `web/dist` does not exist during worker-only development, and the
+# @cloudflare/vitest-pool-workers Miniflare instance fails to start when the
+# assets directory is missing/unresolvable. This config is identical to
+# wrangler.toml minus `[assets]`, plus a tiny `AUTH_ITERATIONS` override so the
+# PBKDF2 login path stays fast in the test suite (see src/auth.ts).
+name = "vps-dog-test"
+main = "src/index.ts"
+compatibility_date = "2024-11-01"
+compatibility_flags = ["nodejs_compat"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "vps-dog"
+database_id = "local-test-database"
+migrations_dir = "migrations"
+
+[triggers]
+crons = ["*/5 * * * *"]
+
+[vars]
+ENVIRONMENT = "test"
+# Fast PBKDF2 for tests only. Production default (unset) is 100000.
+AUTH_ITERATIONS = "1000"

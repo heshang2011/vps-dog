@@ -1,0 +1,21 @@
+{
+  "name": "vps-dog",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A lightweight server monitoring tool that runs entirely on Cloudflare Workers + D1, in the spirit of Komari and Nezha.",
+  "license": "MIT",
+  "scripts": {
+    "dev": "pnpm --filter @vps-dog/web dev",
+    "dev:worker": "pnpm --filter @vps-dog/worker dev",
+    "build": "pnpm --filter @vps-dog/web build",
+    "deploy": "pnpm build && pnpm --filter @vps-dog/worker deploy",
+    "typecheck": "pnpm --filter @vps-dog/worker typecheck && pnpm --filter @vps-dog/web typecheck",
+    "test": "pnpm --filter @vps-dog/worker test",
+    "db:migrate:local": "pnpm --filter @vps-dog/worker db:migrate:local",
+    "db:migrate:remote": "pnpm --filter @vps-dog/worker db:migrate:remote"
+  },
+  "packageManager": "pnpm@11.22.0",
+  "engines": {
+    "node": ">=20"
+  }
+}
