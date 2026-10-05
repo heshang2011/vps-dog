@@ -46,9 +46,10 @@ with zero dependencies.
   search, 10 s auto-refresh. Works on phones.
 - **Chinese + English UI** — auto-detected, switchable.
 - **Multi-user admin** — PBKDF2-SHA256 password hashing, HttpOnly cookie sessions,
-  role support, audit log.
+  `admin` / `viewer` roles enforced server-side, and an audit log.
 - **Public JSON API** — build your own status page or bot on top.
-- **Automatic retention** — a cron trigger prunes old metrics and marks dead nodes offline.
+- **Automatic retention** — a cron trigger prunes old metrics and probe results;
+  nodes are reported offline the moment they go quiet.
 - **No external dependencies in the agent** — pure Go stdlib, cross-compiled for
   7 platform/arch combinations.
 

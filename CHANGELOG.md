@@ -23,10 +23,14 @@ The first public release. Everything below is new.
 - Session auth with PBKDF2-SHA256 (100 000 iterations), `HttpOnly` cookies, 7-day TTL,
   lazy bootstrap of the first admin from the `ADMIN_PASSWORD` secret.
 - Full admin API: node CRUD + token rotation, probe CRUD, settings, users, audit log,
-  overview and a manual retention sweep.
+  overview and a manual retention sweep. Mutating routes require the `admin` role;
+  `viewer` accounts are read-only and receive `403` on any write.
 - CORS for `/api/*`, login rate limiting (10 attempts / 5 min / IP), audit logging of
   every mutation.
-- Cron trigger every 5 minutes for metric retention, session cleanup and offline marking.
+- Cron trigger every 5 minutes for metric and probe retention plus session cleanup.
+  Online state is derived from `last_seen` at read time, so there is no stored flag
+  to sweep and no chance of it disagreeing with reality.
+- `custom_head` injects operator-supplied HTML into the SPA shell's `<head>`.
 - Vitest suite running against a real D1 via `@cloudflare/vitest-pool-workers`.
 
 **Web**
