@@ -545,7 +545,7 @@ tls_skip_verify: false
 | `/`               | `Dashboard`   | 状态条（在线 / 离线 / 总数、站点名称）、节点卡片网格、分组筛选、搜索、10 s 自动刷新 |
 | `/node/:id`       | `NodeDetail`  | 大型 CPU / MEM / DISK 仪表、负载 + 在线时长 + 流量瓦片、ECharts 时间序列（CPU/MEM、网络速率、负载）、带迷你图的探测表格、1h/6h/24h/7d 范围切换 |
 | `/admin`          | `AdminLogin`  | 未认证时显示登录表单                                                       |
-| `/admin/nodes`    | `AdminNodes`  | 表格：新增 / 编辑 / 删除 / 轮换令牌 / 切换隐藏 / 排序                      |
+| `/admin/nodes`    | `AdminNodes`  | 表格：新增 / 编辑 / 删除 / 轮换令牌 / 切换隐藏 / 排序。创建或轮换令牌后弹出对话框，一次性展示明文令牌**与可直接粘贴执行的安装命令**（`curl … | sudo bash -s -- -s <origin> -t <token> -n <name> [-r <region>]`，`origin` 取自 `window.location.origin`） |
 | `/admin/pings`    | `AdminPings`  | 探测任务 CRUD                                                             |
 | `/admin/settings` | `AdminSettings`| 站点设置表单                                                              |
 | `/admin/users`    | `AdminUsers`  | 用户 CRUD                                                                 |

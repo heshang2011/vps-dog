@@ -4,31 +4,65 @@ import { Modal } from '../../components/Modal';
 import { useToast } from '../../components/Toast';
 import { copyText } from '../../lib/clipboard';
 import { useI18n } from '../../lib/i18n';
+import { buildInstallCommand } from '../../lib/install';
 
 export interface TokenDialogProps {
   open: boolean;
   /** Node the token belongs to; `null` while closed. */
   nodeName: string | null;
   token: string | null;
+  /** Prefills `-r` in the install command; omitted when the node has no region. */
+  region?: string | null;
   onClose: () => void;
 }
 
-/** Shows a freshly minted agent token exactly once, with a copy button. */
-export function TokenDialog({ open, nodeName, token, onClose }: TokenDialogProps): ReactNode {
+const COPY_ICON = (
+  <svg viewBox="0 0 16 16" className="size-3.5" fill="none" aria-hidden="true">
+    <rect x="5.5" y="5.5" width="7" height="7" rx="1.4" stroke="currentColor" strokeWidth="1.4" />
+    <path
+      d="M10.5 5.5V4a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v5.5a1 1 0 0 0 1 1h1.5"
+      stroke="currentColor"
+      strokeWidth="1.4"
+    />
+  </svg>
+);
+
+/**
+ * Shows a freshly minted agent token exactly once — together with a
+ * ready-to-paste command that installs the agent and wires the token up, which
+ * is what the operator actually needs after registering a node.
+ */
+export function TokenDialog({
+  open,
+  nodeName,
+  token,
+  region = null,
+  onClose,
+}: TokenDialogProps): ReactNode {
   const { t } = useI18n();
   const toast = useToast();
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<'token' | 'command' | null>(null);
 
-  const onCopy = async () => {
-    if (token === null) return;
-    const ok = await copyText(token);
-    if (ok) {
-      setCopied(true);
-      toast.success(t('toast.copied'));
-      window.setTimeout(() => setCopied(false), 2_000);
-    } else {
+  const command =
+    token === null || nodeName === null
+      ? ''
+      : buildInstallCommand({
+          origin: window.location.origin,
+          token,
+          nodeName,
+          region,
+        });
+
+  const copy = async (what: 'token' | 'command', value: string) => {
+    if (value.length === 0) return;
+    const ok = await copyText(value);
+    if (!ok) {
       toast.error(t('common.copyFailed'));
+      return;
     }
+    setCopied(what);
+    toast.success(t('toast.copied'));
+    window.setTimeout(() => setCopied((current) => (current === what ? null : current)), 2_000);
   };
 
   return (
@@ -45,23 +79,43 @@ export function TokenDialog({ open, nodeName, token, onClose }: TokenDialogProps
           </Button>
           <Button
             variant="primary"
-            onClick={() => void onCopy()}
-            icon={
-              <svg viewBox="0 0 16 16" className="size-3.5" fill="none" aria-hidden="true">
-                <rect x="5.5" y="5.5" width="7" height="7" rx="1.4" stroke="currentColor" strokeWidth="1.4" />
-                <path d="M10.5 5.5V4a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v5.5a1 1 0 0 0 1 1h1.5" stroke="currentColor" strokeWidth="1.4" />
-              </svg>
-            }
+            onClick={() => void copy('command', command)}
+            icon={COPY_ICON}
           >
-            {copied ? t('common.copied') : t('common.copy')}
+            {copied === 'command' ? t('common.copied') : t('admin.nodes.copyCommand')}
           </Button>
         </>
       }
     >
-      <div className="flex flex-col gap-3">
-        <code className="block max-h-40 overflow-auto rounded-xl border border-border bg-surface-2 px-3 py-2.5 font-mono text-xs break-all text-text select-all">
-          {token ?? '–'}
-        </code>
+      <div className="flex flex-col gap-4">
+        <section className="flex flex-col gap-1.5">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[11px] font-medium tracking-wide text-muted uppercase">
+              {t('admin.nodes.tokenHint')}
+            </span>
+            <Button
+              size="sm"
+              variant="ghost"
+              icon={COPY_ICON}
+              onClick={() => void copy('token', token ?? '')}
+            >
+              {copied === 'token' ? t('common.copied') : t('common.copy')}
+            </Button>
+          </div>
+          <code className="block max-h-28 overflow-auto rounded-xl border border-border bg-surface-2 px-3 py-2.5 font-mono text-xs break-all text-text select-all">
+            {token ?? '–'}
+          </code>
+        </section>
+
+        <section className="flex flex-col gap-1.5">
+          <span className="text-[11px] font-medium tracking-wide text-muted uppercase">
+            {t('admin.nodes.installTitle')}
+          </span>
+          <pre className="max-h-44 overflow-auto rounded-xl border border-border bg-surface-2 px-3 py-2.5 font-mono text-[11px] leading-relaxed break-all whitespace-pre-wrap text-text select-all">
+            {command}
+          </pre>
+        </section>
+
         <p className="text-[11px] leading-relaxed text-muted">{t('admin.nodes.installHint')}</p>
       </div>
     </Modal>

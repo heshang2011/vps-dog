@@ -64,7 +64,11 @@ export default function AdminNodes(): ReactNode {
   const [editing, setEditing] = useState<AdminNode | null>(null);
   const [form, setForm] = useState<NodeFormState>(EMPTY_FORM);
   const [formError, setFormError] = useState<string | null>(null);
-  const [tokenDialog, setTokenDialog] = useState<{ name: string; token: string } | null>(null);
+  const [tokenDialog, setTokenDialog] = useState<{
+    name: string;
+    token: string;
+    region: string;
+  } | null>(null);
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
 
   const nodesQuery = useQuery({
@@ -94,7 +98,11 @@ export default function AdminNodes(): ReactNode {
       setFormOpen(false);
       setForm(EMPTY_FORM);
       setFormError(null);
-      setTokenDialog({ name: variables.name.trim(), token: data.token });
+      setTokenDialog({
+        name: variables.name.trim(),
+        token: data.token,
+        region: variables.region.trim(),
+      });
       toast.success(t('toast.created'));
     },
     onError: (error: unknown) => setFormError(errorMessage(error)),
@@ -135,7 +143,11 @@ export default function AdminNodes(): ReactNode {
     onSuccess: (data, id) => {
       invalidate();
       const node = nodesQuery.data?.nodes.find((candidate) => candidate.id === id);
-      setTokenDialog({ name: node?.name ?? '', token: data.token });
+      setTokenDialog({
+        name: node?.name ?? '',
+        token: data.token,
+        region: node?.region ?? '',
+      });
       toast.success(t('toast.updated'));
     },
     onError: (error: unknown) => toast.error(errorMessage(error)),
@@ -473,6 +485,7 @@ export default function AdminNodes(): ReactNode {
         open={tokenDialog !== null}
         nodeName={tokenDialog?.name ?? null}
         token={tokenDialog?.token ?? null}
+        region={tokenDialog?.region ?? null}
         onClose={() => setTokenDialog(null)}
       />
 

@@ -245,7 +245,10 @@ const en = {
   'admin.nodes.hide': 'Hide',
   'admin.nodes.tokenOnce': 'Copy this token now — it is shown only once.',
   'admin.nodes.tokenFor': 'Agent token for {name}',
-  'admin.nodes.installHint': 'Install the agent on the server and pass this token.',
+  'admin.nodes.installTitle': 'Install on the server',
+  'admin.nodes.copyCommand': 'Copy install command',
+  'admin.nodes.installHint':
+    'Run this on the server — it installs the agent, writes the config and starts the service.',
 
   'admin.pings.title': 'Probe tasks',
   'admin.pings.subtitle': 'Latency probes the agent runs and reports back.',
@@ -531,7 +534,9 @@ const zhCN: Record<TranslationKey, string> = {
   'admin.nodes.hide': '隐藏',
   'admin.nodes.tokenOnce': '请立即复制该令牌——它只会显示一次。',
   'admin.nodes.tokenFor': '{name} 的 Agent 令牌',
-  'admin.nodes.installHint': '在服务器上安装探针时填入该令牌。',
+  'admin.nodes.installTitle': '在服务器上安装',
+  'admin.nodes.copyCommand': '复制安装命令',
+  'admin.nodes.installHint': '在服务器上执行该命令即可完成安装、写入配置并启动服务。',
 
   'admin.pings.title': '探测任务',
   'admin.pings.subtitle': '由探针执行并回传的延迟探测。',
