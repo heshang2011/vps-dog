@@ -45,22 +45,30 @@ node -v && pnpm -v && npx wrangler --version
 
 仓库内置了补上这一步的脚本 [`scripts/ensure-d1.mjs`](../scripts/ensure-d1.mjs)：部署前先查一次账号里的 D1，**有同名库就绑定，没有就创建**，然后把真实的 `database_id` 写回 `wrangler.toml`。它只看 id 是否真的能在账号里解析出来，不看格式 —— 从别人的 fork 里带过来的合法 UUID 同样会被当成"缺失"并修复。脚本是幂等的，反复构建不会重复建库。
 
-在 Cloudflare 仪表盘 → 你的 Worker → **Settings → Build** 中确认：
+**关键：建库和建表都由 `build` 这一步完成。**
+
+`pnpm build` 在 Cloudflare 的构建环境里（检测到 `WORKERS_CI` 时）会额外做三件事；本地跑则完全跳过、不联网：
+
+1. **断言 `web/dist/index.html` 存在** —— 缺了就让构建直接失败，而不是部署一个空白前端
+2. **`ensure-d1`** —— 账号里没有 `vps-dog` 就创建，有就绑定，并把真实的 `database_id` 写回 `wrangler.toml`
+3. **`d1 migrations apply DB --remote`** —— 建表。少了这一步，库是空的，所有 `/api/*` 都会 500
+
+因为 `build` 必定在 `deploy` 之前执行，所以配置可以很简单：
 
 | 设置项 | 值 |
 | --- | --- |
 | Build command | `pnpm install && pnpm build` |
-| Deploy command | `pnpm run deploy` |
+| Deploy command | `pnpm run deploy`（或保持默认的 `npx wrangler deploy`） |
 
-`pnpm run deploy` 会依次执行三件事：`ensure-d1`（建库 + 绑定）→ `d1 migrations apply DB --remote`（建表）→ `wrangler deploy`（部署）。
+不显式配置也能跑通，但配上最稳：`pnpm run deploy` 会再做一次 `ensure-d1` 和迁移（两者都幂等），相当于给 build 阶段加一层兜底。
 
-三点注意：
+四点注意：
 
 - 写 **`pnpm run deploy`**，不要写 `pnpm deploy` —— 后者在部分 pnpm 版本里会被解析成 pnpm 的内置命令。
 - 如果这个 Cloudflare 登录下挂了**多个账号**，请在 **Settings → Build → Variables and Secrets** 里补上 `CLOUDFLARE_ACCOUNT_ID`（值见 `npx wrangler whoami`）。非交互环境下 Wrangler 无法替你选择账号。
 - 一键按钮会提示你填 `ADMIN_PASSWORD`，Workers Builds 不会。部署完成后到 **Settings → Variables and Secrets** 添加同名 **Secret** 即可，无需重新部署；留空则初始化密码为 `admin`。
+- 构建环境里的这些 D1 操作需要该次构建的凭据带 **D1 读写权限**。若权限不足，`ensure-d1` 会在日志里警告但**不阻断构建**，随后 `wrangler deploy` 会用仓库里的占位 `database_id` 报出明确错误 —— 而不是静默部署一个坏站点。
 
-> `pnpm build` 自己也会在 Workers Builds 里跑一次 `ensure-d1`（带 `--if-ci`，出错只警告不中断），所以即使 Deploy command 保持默认的 `npx wrangler deploy`，数据库同样会被建好并绑定；但**建表迁移不会被执行**，页面会报 `no such table`。因此 Deploy command 请按上表设置。
 
 ### 构建配置不对时看到的现象
 

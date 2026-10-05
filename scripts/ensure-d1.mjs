@@ -15,7 +15,9 @@
  *
  * This script closes that gap. It runs before every remote deploy — from
  * `pnpm deploy`, from `pnpm db:ensure`, and (via the `build` script) inside
- * Cloudflare's build runner.
+ * Cloudflare's build runner. In Workers Builds the `build` command is the only
+ * step guaranteed to run before `wrangler deploy`, so that is where the whole
+ * provision sequence lives: create/bind the database *and* apply migrations.
  *
  * Resolution order
  * ----------------
@@ -31,10 +33,19 @@
  *
  * Flags
  * -----
- *   --if-ci   Do nothing unless running inside Cloudflare Workers Builds. Used
- *             by the `build` script, so the default Workers Builds deploy
- *             command needs no extra wiring.
- *   --check   Report the decision, change nothing (no create, no rewrite).
+ *   --if-ci            Do nothing unless running inside Cloudflare Workers
+ *                      Builds. Used by the `build` script, so the default
+ *                      Workers Builds deploy command needs no extra wiring.
+ *   --check            Report the decision, change nothing (no create, no
+ *                      rewrite, no migration).
+ *   --require-assets   Fail if `web/dist/index.html` is missing. Without this
+ *                      the Worker deploys happily with an empty assets binding
+ *                      and serves the "frontend has not been built" page —
+ *                      a silent failure. Always enforced, CI or not.
+ *   --migrate          Apply pending D1 migrations after the database is
+ *                      bound. Required in CI: a bound but empty database makes
+ *                      every `/api/*` route answer 500 with
+ *                      `D1_ERROR: no such table`.
  *
  * Environment
  * -----------
@@ -59,10 +70,24 @@ const configPath = process.env.VPS_DOG_D1_CONFIG
 const flags = new Set(process.argv.slice(2).filter((arg) => arg.startsWith("--")));
 const ifCi = flags.has("--if-ci");
 const checkOnly = flags.has("--check");
+const requireAssets = flags.has("--require-assets");
+const migrate = flags.has("--migrate");
 
 const tag = "[vps-dog]";
 const log = (message) => console.log(`${tag} ${message}`);
 const warn = (message) => console.warn(`${tag} ${message}`);
+
+/**
+ * An error that must fail the build even in CI. `--if-ci` swallows *optional*
+ * provisioning failures (a token without D1 permissions should not break the
+ * deploy), but a missing frontend or a failed migration is never optional:
+ * those produce a deployed Worker that answers 500 on every API call.
+ */
+function fatal(message) {
+  const error = new Error(message);
+  error.fatal = true;
+  return error;
+}
 
 /** Cloudflare's build runner exports these; a plain local shell does not. */
 function inWorkersBuilds() {
@@ -154,7 +179,42 @@ function bind(databaseName, database, how) {
   log(`${how} D1 "${databaseName}" (${database.uuid}); ${configPath} updated`);
 }
 
+/**
+ * The SPA is the only thing the Worker serves at `/`. Without it the deploy
+ * still succeeds and the site silently renders the NO_BUILD_HTML page from
+ * src/router.ts, so fail loudly instead.
+ */
+function verifyAssets() {
+  if (existsSync(join(root, "web", "dist", "index.html"))) return;
+  throw fatal(
+    "web/dist/index.html does not exist.\n" +
+      "  Deploying now would publish a Worker with an empty static-assets binding,\n" +
+      '  which serves the "frontend has not been built" page instead of the SPA.\n' +
+      "  Build it first:  pnpm --filter @vps-dog/web build\n" +
+      "  In Workers Builds the Build command must be `pnpm install && pnpm build`.",
+  );
+}
+
+/**
+ * A database that exists but holds no tables answers 500 on every `/api/*`
+ * route (`D1_ERROR: no such table`). Binding the database is only half the
+ * job — this is the other half.
+ */
+function applyMigrations(bindingName) {
+  if (checkOnly) {
+    log(`would apply migrations for binding "${bindingName}"`);
+    return;
+  }
+  const output = wrangler(["d1", "migrations", "apply", bindingName, "--remote"]);
+  log(`migrations applied for "${bindingName}"`);
+  if (!/✅/.test(output)) {
+    warn(`unexpected migration output; tail: ${output.trim().split("\n").slice(-4).join(" | ")}`);
+  }
+}
+
 function main() {
+  if (requireAssets) verifyAssets();
+
   if (ifCi && !inWorkersBuilds()) {
     log("not running in Cloudflare Workers Builds; skipping D1 provisioning");
     return;
@@ -164,6 +224,7 @@ function main() {
   const config = readFileSync(configPath, "utf8");
   const databaseName = readBinding(config, "database_name");
   const databaseId = readBinding(config, "database_id");
+  const bindingName = readBinding(config, "binding") || "DB";
   if (!databaseName) throw new Error("[[d1_databases]] has no database_name");
 
   const databases = listDatabases();
@@ -172,36 +233,37 @@ function main() {
   //    format check — that distinction is the whole point of this script.
   if (databaseId && databases.some((db) => db.uuid === databaseId)) {
     log(`D1 "${databaseName}" already configured (${databaseId})`);
-    return;
-  }
-  if (databaseId) {
-    warn(`database_id "${databaseId}" is not visible in this account — repairing`);
+  } else {
+    if (databaseId) {
+      warn(`database_id "${databaseId}" is not visible in this account — repairing`);
+    }
+
+    // 2. Same name, different id: adopt it rather than creating a duplicate.
+    const byName = databases.find((db) => db.name === databaseName);
+    if (byName) {
+      bind(databaseName, byName, "found existing");
+    } else {
+      // 3. Nothing to adopt: create it.
+      if (process.env.VPS_DOG_D1_NO_CREATE === "1") {
+        throw new Error(
+          `D1 "${databaseName}" does not exist and VPS_DOG_D1_NO_CREATE=1 is set`,
+        );
+      }
+      if (checkOnly) {
+        log(`would create D1 "${databaseName}"`);
+      } else {
+        log(`no D1 named "${databaseName}" in this account; creating it`);
+        wrangler(["d1", "create", databaseName]);
+        // Re-list rather than scraping `create` output, which is not stable JSON.
+        const created = listDatabases().find((db) => db.name === databaseName);
+        if (!created) throw fatal(`created D1 "${databaseName}" but it is not listed yet`);
+        bind(databaseName, created, "created");
+      }
+    }
   }
 
-  // 2. Same name, different id: adopt it rather than creating a duplicate.
-  const byName = databases.find((db) => db.name === databaseName);
-  if (byName) {
-    bind(databaseName, byName, "found existing");
-    return;
-  }
-
-  // 3. Nothing to adopt: create it.
-  if (process.env.VPS_DOG_D1_NO_CREATE === "1") {
-    throw new Error(
-      `D1 "${databaseName}" does not exist and VPS_DOG_D1_NO_CREATE=1 is set`,
-    );
-  }
-  if (checkOnly) {
-    log(`would create D1 "${databaseName}"`);
-    return;
-  }
-
-  log(`no D1 named "${databaseName}" in this account; creating it`);
-  wrangler(["d1", "create", databaseName]);
-  // Re-list rather than scraping `create` output, which is not stable JSON.
-  const created = listDatabases().find((db) => db.name === databaseName);
-  if (!created) throw new Error(`created D1 "${databaseName}" but it is not listed yet`);
-  bind(databaseName, created, "created");
+  // Binding alone is not enough: a database with no tables 500s every API route.
+  if (migrate) applyMigrations(bindingName);
 }
 
 const AUTH_HINT = [
@@ -217,14 +279,17 @@ try {
   main();
 } catch (error) {
   const message = error.message || String(error);
-  if (ifCi) {
-    // The `build` script uses this path. A build must not fail over optional
-    // provisioning: `wrangler deploy` reports the authoritative error anyway.
+  if (ifCi && !error.fatal) {
+    // The `build` script uses this path. A build must not fail over *optional*
+    // provisioning — a token without D1 permissions should not break the
+    // deploy, since `wrangler deploy` reports the authoritative error anyway.
+    // Missing assets and failed migrations are not optional: they ship a
+    // Worker that answers 500 forever, so those throw `fatal` and fail.
     warn(`could not provision D1 automatically: ${message}`);
     warn("continuing — the deploy step will report the authoritative error");
     process.exit(0);
   }
-  console.error(`${tag} ensure-d1 failed: ${message}`);
+  console.error(`${tag} failed: ${message}`);
   if (/account|authenticat|10000|10023|403|Unauthorized|login/i.test(message)) {
     console.error(AUTH_HINT);
   }

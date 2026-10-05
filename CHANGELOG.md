@@ -7,6 +7,16 @@
 
 ### 修复
 
+- **部署：`build` 阶段现在完成完整的 D1 配置（建库 + 绑定 + 建表）。** 此前只做了「建库 + 绑定」，
+  没有建表，于是 Workers Builds 自动部署出来的站点能打开、但**所有 `/api/*` 都返回 500**
+  （`wrangler tail` 里是 `D1_ERROR: no such table: settings`）。现在 `pnpm build` 在 Cloudflare
+  构建环境里（检测到 `WORKERS_CI`）会依次执行：断言 `web/dist/index.html` 存在 →
+  `ensure-d1`（建库 / 绑定 / 写回 `database_id`）→ `d1 migrations apply --remote`（建表）；
+  本地执行时整段跳过、不联网。
+- **部署：前端产物缺失不再静默上线。** 新增 `--require-assets`：`web/dist` 为空时构建直接失败
+  并打印修复指引，而不是部署一个只显示「frontend has not been built」空白页的 Worker。
+- **部署：CI 里的失败分层更清晰。** 可选步骤（例如构建凭据缺少 D1 权限）仍只警告、不阻断构建；
+  而「前端缺失」「迁移失败」这两类会发布坏站点的错误一律让构建失败。
 - **部署：自动创建并绑定 D1 现在真的生效了。** 此前 `scripts/ensure-d1.mjs` 用「`database_id`
   是否符合 UUID 格式」来判断配置是占位符还是真实值，于是一个从别人 fork 里带过来的合法 UUID
   （在当前账号并不存在）会被判为「已配置」，脚本直接报错退出而不会建库 —— 这正是

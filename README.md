@@ -85,7 +85,7 @@ pnpm build && pnpm run deploy
 
 </details>
 
-> **把仓库连到 Git（Workers Builds）而不是点按钮？** 这条路**不会**替你创建 D1 数据库，直接用默认配置部署会报 `D1 binding 'DB' references database ... which was not found [code: 10181]`。请在 Worker 的 **Settings → Build** 里把 **Deploy command** 设为 `pnpm run deploy` —— 它会依次完成建库、绑定、建表与部署。细节见[部署指南 §0.5](docs/DEPLOYMENT.md)。
+> **把仓库连到 Git（Workers Builds）而不是点按钮？** 这条路**不会**替你创建 D1 数据库 —— 这一步由仓库的 `build` 脚本在 Cloudflare 构建环境里自动完成（建库 → 绑定 → 建表），本地执行时跳过。在 Worker 的 **Settings → Build** 里确认 **Build command** 是 `pnpm install && pnpm build` 即可；**Deploy command** 保持默认的 `npx wrangler deploy` 或设为 `pnpm run deploy` 都能工作。细节见[部署指南 §0.5](docs/DEPLOYMENT.md)。
 
 ### 2. 添加节点
 
