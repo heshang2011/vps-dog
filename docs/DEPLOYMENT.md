@@ -62,6 +62,18 @@ node -v && pnpm -v && npx wrangler --version
 
 > `pnpm build` 自己也会在 Workers Builds 里跑一次 `ensure-d1`（带 `--if-ci`，出错只警告不中断），所以即使 Deploy command 保持默认的 `npx wrangler deploy`，数据库同样会被建好并绑定；但**建表迁移不会被执行**，页面会报 `no such table`。因此 Deploy command 请按上表设置。
 
+### 构建配置不对时看到的现象
+
+Build command 和 Deploy command 是两件独立的事，各漏一半会得到两种完全不同的症状 —— 对号入座即可：
+
+| 现象 | 缺了哪一步 | 修复 |
+| --- | --- | --- |
+| 打开站点看到深色的 **"The VPS-DOG frontend has not been built yet"** 页面，但 `/api/*` 是通的 | Build command 没跑，`web/dist` 不存在，静态资源绑定是空的 | Build command 设为 `pnpm install && pnpm build` |
+| 页面正常（或仍是上面的降级页），但**所有** `/api/*` 返回 500 `{"error":"internal_error","message":"Internal server error"}` | 迁移没跑。用 `npx wrangler tail` 会看到 `D1_ERROR: no such table: settings` | Deploy command 设为 `pnpm run deploy` |
+| 两者同时出现 | Deploy command 用了默认的 `npx wrangler deploy`，两个步骤都跳过了 | 两条都按上面设置 |
+
+> 那个降级页**不等于** Worker 没起来，也不等于数据库没建 —— 它只表示 `env.ASSETS` 里没有内容。反过来，API 报 `no such table` 也不代表绑定错了：`npx wrangler d1 list` 里看这张库的 `num_tables` 是 0，就是迁移没跑。
+
 ---
 
 ## 1. 克隆并构建前端
@@ -291,3 +303,4 @@ Agent 与 v1 协议向前和向后兼容；升级它们是可选的。重新运�
 | Workers Builds 报 `More than one account available but unable to select one in non-interactive mode` | 该登录下有多个账号，构建环境无法交互选择。在 **Settings → Build → Variables and Secrets** 里添加 `CLOUDFLARE_ACCOUNT_ID`。 |
 | 新节点上图表为空 | 历史数据至少需要两次上报；等一分钟。 |
 | `D1_ERROR: too many SQL variables` | 只有在你 fork 并修改批次大小时才可能出现；内置清理任务会分批写入。 |
+| `*.workers.dev` 返回 `error code: 1101`，但自定义域名一切正常 | 这是 **workers.dev 入口本身**的问题，请求压根不会到达 Worker：`npx wrangler tail` 里看不到这些请求，且同一子域下的其他 Worker 会一并报错（子域级故障）。与本项目的代码和配置无关，挂上自定义域名即可，无需改仓库。 |
