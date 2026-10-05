@@ -34,3 +34,6 @@ pnpm-debug.log*
 
 # test coverage
 coverage/
+
+# local tooling state
+.workbuddy/

@@ -70,18 +70,22 @@ git clone https://github.com/heshang2011/vps-dog.git
 cd vps-dog
 
 pnpm install
-pnpm build                     # 生成 web/dist
-
 npx wrangler login
-npx wrangler d1 create vps-dog          # 把输出的 database_id 填进根目录 wrangler.toml
-npx wrangler d1 migrations apply DB --remote
+
+pnpm db:ensure                          # 创建/绑定 D1 并把真实 database_id 写回 wrangler.toml
 npx wrangler secret put ADMIN_PASSWORD  # 初始管理员密码
-npx wrangler deploy
+npx wrangler d1 migrations apply DB --remote
+
+pnpm build && pnpm run deploy
 ```
 
+> `pnpm db:ensure` 是幂等的：库里已有同名数据库就直接绑定，没有才创建。想先看它打算做什么，用 `node scripts/ensure-d1.mjs --check`。
+>
 > 更习惯用仪表盘？也可以在 Cloudflare 仪表盘中创建 D1 数据库，再把它的 ID 粘贴到根目录的 `wrangler.toml`。
 
 </details>
+
+> **把仓库连到 Git（Workers Builds）而不是点按钮？** 这条路**不会**替你创建 D1 数据库，直接用默认配置部署会报 `D1 binding 'DB' references database ... which was not found [code: 10181]`。请在 Worker 的 **Settings → Build** 里把 **Deploy command** 设为 `pnpm run deploy` —— 它会依次完成建库、绑定、建表与部署。细节见[部署指南 §0.5](docs/DEPLOYMENT.md)。
 
 ### 2. 添加节点
 

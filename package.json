@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "pnpm --filter @vps-dog/web dev",
     "dev:worker": "wrangler dev --port 8787",
-    "build": "pnpm --filter @vps-dog/web build",
+    "build": "pnpm --filter @vps-dog/web build && node scripts/ensure-d1.mjs --if-ci",
     "deploy": "node scripts/ensure-d1.mjs && wrangler d1 migrations apply DB --remote && wrangler deploy",
     "db:ensure": "node scripts/ensure-d1.mjs",
     "db:migrate:local": "node scripts/ensure-d1.mjs && wrangler d1 migrations apply DB --local",

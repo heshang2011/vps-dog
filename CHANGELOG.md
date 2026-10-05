@@ -3,6 +3,28 @@
 本项目所有值得注意的变更都记录在此。
 格式遵循 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)，且本项目遵循[语义化版本](https://semver.org/spec/v2.0.0.html)。
 
+## [未发布]
+
+### 修复
+
+- **部署：自动创建并绑定 D1 现在真的生效了。** 此前 `scripts/ensure-d1.mjs` 用「`database_id`
+  是否符合 UUID 格式」来判断配置是占位符还是真实值，于是一个从别人 fork 里带过来的合法 UUID
+  （在当前账号并不存在）会被判为「已配置」，脚本直接报错退出而不会建库 —— 这正是
+  `D1 binding 'DB' references database '<id>' which was not found [code: 10181]` 反复出现的原因。
+  现在改为按**身份**判断：只有 id 能在当前账号解析出来才算已配置；否则寻找同名库并绑定，
+  再否则创建。`--check` 可预览决策，`VPS_DOG_D1_NO_CREATE=1` 可禁止自动创建。
+- **部署：Workers Builds 会自动补建 D1。** `build` 脚本在 Cloudflare 构建环境里会调用
+  `ensure-d1 --if-ci`（非 CI 环境直接跳过；出错只警告、不中断构建），因此即使 Deploy command
+  保持默认的 `npx wrangler deploy`，数据库也会被创建并写回配置。完整的「建表 + 部署」链路
+  仍建议把 Deploy command 设为 `pnpm run deploy`。
+- **部署：修正 `wrangler.toml` 中 `workers_dev` 的位置。** 它原先落在 `[assets]` 表内部，
+  Wrangler 会警告 `Unexpected fields found in assets field: "workers_dev"`。已移到顶层。
+- **部署：不再提交属于他人账号的 `database_id`。** 改回文档中一直描述的占位符
+  `REPLACE_WITH_YOUR_D1_DATABASE_ID`。
+- **文档**：新增《Workers Builds（Git 集成）部署》一节及三条对应排查项；README 的手动部署
+  步骤改用 `pnpm db:ensure`；`pnpm deploy` 统一改写为 `pnpm run deploy`（部分 pnpm 版本会
+  把 `pnpm deploy` 解析成内置命令）。
+
 ## [1.0.0] — 2026-10-05
 
 首个公开发布版本。以下全部为新增内容。

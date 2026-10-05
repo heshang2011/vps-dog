@@ -33,6 +33,37 @@ node -v && pnpm -v && npx wrangler --version
 
 ---
 
+## 0.5 Workers Builds（Git 集成）部署
+
+如果你不是点按钮，而是把 GitHub 仓库直接连到 **Workers & Pages → Create → Workers → Connect to Git**，有一点必须先知道：
+
+> Workers Builds **不会**为你的仓库创建 D1 数据库。"Deploy to Cloudflare" 按钮会创建，但只在**它克隆出来的那份副本**里创建。你自己连 Git 时没有这一步，于是 `wrangler deploy` 读到的仍然是仓库里的占位 `database_id`，直接失败：
+
+> ```
+> D1 binding 'DB' references database '<id>' which was not found. [code: 10181]
+> ```
+
+仓库内置了补上这一步的脚本 [`scripts/ensure-d1.mjs`](../scripts/ensure-d1.mjs)：部署前先查一次账号里的 D1，**有同名库就绑定，没有就创建**，然后把真实的 `database_id` 写回 `wrangler.toml`。它只看 id 是否真的能在账号里解析出来，不看格式 —— 从别人的 fork 里带过来的合法 UUID 同样会被当成"缺失"并修复。脚本是幂等的，反复构建不会重复建库。
+
+在 Cloudflare 仪表盘 → 你的 Worker → **Settings → Build** 中确认：
+
+| 设置项 | 值 |
+| --- | --- |
+| Build command | `pnpm install && pnpm build` |
+| Deploy command | `pnpm run deploy` |
+
+`pnpm run deploy` 会依次执行三件事：`ensure-d1`（建库 + 绑定）→ `d1 migrations apply DB --remote`（建表）→ `wrangler deploy`（部署）。
+
+三点注意：
+
+- 写 **`pnpm run deploy`**，不要写 `pnpm deploy` —— 后者在部分 pnpm 版本里会被解析成 pnpm 的内置命令。
+- 如果这个 Cloudflare 登录下挂了**多个账号**，请在 **Settings → Build → Variables and Secrets** 里补上 `CLOUDFLARE_ACCOUNT_ID`（值见 `npx wrangler whoami`）。非交互环境下 Wrangler 无法替你选择账号。
+- 一键按钮会提示你填 `ADMIN_PASSWORD`，Workers Builds 不会。部署完成后到 **Settings → Variables and Secrets** 添加同名 **Secret** 即可，无需重新部署；留空则初始化密码为 `admin`。
+
+> `pnpm build` 自己也会在 Workers Builds 里跑一次 `ensure-d1`（带 `--if-ci`，出错只警告不中断），所以即使 Deploy command 保持默认的 `npx wrangler deploy`，数据库同样会被建好并绑定；但**建表迁移不会被执行**，页面会报 `no such table`。因此 Deploy command 请按上表设置。
+
+---
+
 ## 1. 克隆并构建前端
 
 ```bash
@@ -51,8 +82,19 @@ pnpm build          # emits web/dist — the Worker serves this as static assets
 
 ## 2. 创建 D1 数据库
 
+最省事的方式是让脚本一次性完成"查库 / 建库 / 改写配置"：
+
 ```bash
 npx wrangler login
+pnpm db:ensure          # 需要多账号时：CLOUDFLARE_ACCOUNT_ID=<id> pnpm db:ensure
+```
+
+它会把真实的 `database_id` 写进根目录的 [`wrangler.toml`](../wrangler.toml)，替换掉 `REPLACE_WITH_YOUR_D1_DATABASE_ID`。想先看看它会做什么而不实际改动，加 `--check`：`node scripts/ensure-d1.mjs --check`。
+
+<details>
+<summary>手动创建（等价步骤）</summary>
+
+```bash
 npx wrangler d1 create vps-dog
 ```
 
@@ -66,6 +108,8 @@ database_id = "8f3c1e2a-...."
 ```
 
 把真实的 `database_id` 粘贴到根目录的 [`wrangler.toml`](../wrangler.toml) 中，替换 `REPLACE_WITH_YOUR_D1_DATABASE_ID`。
+
+</details>
 
 ---
 
@@ -242,5 +286,8 @@ Agent 与 v1 协议向前和向后兼容；升级它们是可选的。重新运�
 | 仪表盘一片空白 | 部署前没有构建 `web/dist`。运行 `pnpm build` 并重新部署。 |
 | `/admin` 提示密码错误 | 在用户创建之后才设置 `ADMIN_PASSWORD` 密钥 —— 该密钥只用于初始化*第一个*用户。可在 D1 控制台执行 `DELETE FROM users;` 重置，或直接添加一个用户。 |
 | `no such table` | 迁移被应用到了错误的 database id。请重新检查根目录的 `wrangler.toml`。 |
+| 部署时报 `[code: 10181]`（database not found）或 `[code: 10021]`（invalid database_id） | `wrangler.toml` 里的 `database_id` 指向了本账号不存在的库 —— 常见于从别人的 fork 或一键部署副本里带来的 id。执行 `pnpm db:ensure`，它会创建/绑定本账号的库并改写配置。Workers Builds 场景见 §0.5。 |
+| Workers Builds 构建成功，但页面报 `no such table` | 建表迁移没有执行。把 Deploy command 设为 `pnpm run deploy`（见 §0.5）。 |
+| Workers Builds 报 `More than one account available but unable to select one in non-interactive mode` | 该登录下有多个账号，构建环境无法交互选择。在 **Settings → Build → Variables and Secrets** 里添加 `CLOUDFLARE_ACCOUNT_ID`。 |
 | 新节点上图表为空 | 历史数据至少需要两次上报；等一分钟。 |
 | `D1_ERROR: too many SQL variables` | 只有在你 fork 并修改批次大小时才可能出现；内置清理任务会分批写入。 |

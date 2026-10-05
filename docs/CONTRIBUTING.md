@@ -133,8 +133,10 @@ chore(ci): cache the pnpm store
 2. `git tag v1.x.y && git push --tags`。
 3. `release` workflow 会为所有目标交叉编译 Agent，并把二进制文件
    连同 `install.sh` 附加到 GitHub 发布中。
-4. 在**仓库根目录**执行 `pnpm build && pnpm deploy` 即可发布 Worker；SPA 会在同一次
-   部署中上传（assets 绑定）。
+4. 在**仓库根目录**执行 `pnpm build && pnpm run deploy` 即可发布 Worker；SPA 会在同一次
+   部署中上传（assets 绑定）。`deploy` 会先跑 `scripts/ensure-d1.mjs`，把 D1
+   数据库补建/绑定到当前账号 —— 改了 `wrangler.toml` 里的 D1 相关内容后请连同它一起测试。
+   （注意别写成 `pnpm deploy`，部分 pnpm 版本会把它当成内置命令。）
 
 ## 问题反馈
 

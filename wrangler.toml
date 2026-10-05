@@ -2,15 +2,26 @@ name = "vps-dog"
 main = "worker/src/index.ts"
 compatibility_date = "2024-11-01"
 compatibility_flags = ["nodejs_compat"]
+workers_dev = true
 
-# D1 database. The placeholder `database_id` is intentional: the Deploy to
-# Cloudflare button provisions a real database and rewrites this value in the
-# user's cloned repository. Keep the key present or provisioning has nothing to
-# bind to.
+# D1 database.
+#
+# `database_id` is a placeholder on purpose. Every supported deploy path
+# replaces it with the id of a database that really exists in *your* account:
+#
+#   * "Deploy to Cloudflare" button — rewrites this file in the copy it clones.
+#   * `pnpm deploy` / `pnpm db:ensure` — `scripts/ensure-d1.mjs` runs first,
+#     creates the database when it is missing and rewrites this value.
+#   * Workers Builds — the same script runs from the `build` script.
+#
+# Never commit an id copied from someone else's fork: the account that deploys
+# is the one that must own the database, otherwise `wrangler deploy` stops with
+# `[code: 10181]` (database not found) or `[code: 10021]` (invalid id).
+# Keep the key present — it is what the provisioning step binds to.
 [[d1_databases]]
 binding = "DB"
 database_name = "vps-dog"
-database_id = "f1494026-79da-4652-805b-ec9d296bf1b3"
+database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
 migrations_dir = "worker/migrations"
 
 [assets]
@@ -20,8 +31,6 @@ not_found_handling = "single-page-application"
 # `true` so the SPA shell is rendered by the Worker and the `custom_head`
 # setting can be injected. Static assets are still served by the binding.
 run_worker_first = true
-
-workers_dev = true
 
 [triggers]
 crons = ["*/5 * * * *"]

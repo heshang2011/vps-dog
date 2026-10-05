@@ -1,37 +1,77 @@
 #!/usr/bin/env node
 /**
- * Ensure the D1 database referenced by wrangler.toml exists and that the config
- * carries its real `database_id`.
+ * Ensure the D1 database declared in wrangler.toml exists in the current
+ * account, and that the config carries its real `database_id`.
  *
- * Cloudflare's Workers Builds does NOT provision D1 bindings — only the
- * "Deploy to Cloudflare" wizard does, and it does so in a cloned copy of the
- * repository. Connecting an existing repository to Workers Builds therefore
- * fails with:
+ * Why this exists
+ * ---------------
+ * The repository ships a placeholder `database_id`. Cloudflare's "Deploy to
+ * Cloudflare" wizard replaces it with a real id *inside the copy it clones*,
+ * but a repository connected to **Workers Builds** is used exactly as pushed.
+ * `wrangler deploy` therefore gets whatever is committed, and fails with:
  *
+ *   D1 binding 'DB' references database '<id>' which was not found. [code: 10181]
  *   binding DB of type d1 must have a valid `database_id` specified [code: 10021]
  *
- * This script closes that gap. It runs before deploy and:
+ * This script closes that gap. It runs before every remote deploy — from
+ * `pnpm deploy`, from `pnpm db:ensure`, and (via the `build` script) inside
+ * Cloudflare's build runner.
  *
- *   1. reads `database_name` / `database_id` out of wrangler.toml
- *   2. lists the account's D1 databases
- *   3. uses the matching database, or creates it when absent
- *   4. rewrites `database_id` in wrangler.toml so the subsequent
- *      `d1 migrations apply` and `deploy` calls bind to the right database
+ * Resolution order
+ * ----------------
+ *   1. `database_id` resolves in this account   -> nothing to do
+ *   2. a database named `database_name` exists  -> bind it
+ *   3. neither                                  -> create it, then bind it
  *
- * It is idempotent: once the database exists, later runs are a lookup only.
+ * The shape of the committed id is deliberately **not** trusted. An id that
+ * merely looks like a UUID — for example one copied from an upstream fork's
+ * wrangler.toml — is still treated as missing whenever this account cannot
+ * resolve it. Treating "looks like a UUID" as "is configured" is what made
+ * `code: 10181` survive an earlier version of this script.
  *
- * The account is whatever the environment resolves — Workers Builds injects
- * `CLOUDFLARE_ACCOUNT_ID`, and locally you can export it or pass `-c` through
- * `WRANGLER_ARGS`. No account id is ever written to the repository.
+ * Flags
+ * -----
+ *   --if-ci   Do nothing unless running inside Cloudflare Workers Builds. Used
+ *             by the `build` script, so the default Workers Builds deploy
+ *             command needs no extra wiring.
+ *   --check   Report the decision, change nothing (no create, no rewrite).
+ *
+ * Environment
+ * -----------
+ *   CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_API_TOKEN
+ *             Standard Wrangler authentication. Required in CI; only needed
+ *             locally when the token can reach more than one account.
+ *   VPS_DOG_D1_NO_CREATE=1
+ *             Refuse to create a database (step 3 becomes a hard error).
+ *   VPS_DOG_D1_CONFIG
+ *             Override the config path (defaults to `<repo>/wrangler.toml`).
  */
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const configPath = join(root, "wrangler.toml");
+const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const configPath = process.env.VPS_DOG_D1_CONFIG
+  ? resolve(process.env.VPS_DOG_D1_CONFIG)
+  : join(root, "wrangler.toml");
+
+const flags = new Set(process.argv.slice(2).filter((arg) => arg.startsWith("--")));
+const ifCi = flags.has("--if-ci");
+const checkOnly = flags.has("--check");
+
+const tag = "[vps-dog]";
+const log = (message) => console.log(`${tag} ${message}`);
+const warn = (message) => console.warn(`${tag} ${message}`);
+
+/** Cloudflare's build runner exports these; a plain local shell does not. */
+function inWorkersBuilds() {
+  return Boolean(
+    process.env.WORKERS_CI ||
+      process.env.WORKERS_CI_BUILD_UUID ||
+      process.env.WORKERS_CI_COMMIT_SHA,
+  );
+}
 
 /** Locate the wrangler CLI without depending on a shell or .cmd shims. */
 function wranglerEntry() {
@@ -64,8 +104,9 @@ function wrangler(args) {
 
 /** Pull a scalar string value out of the top-level `[[d1_databases]]` block. */
 function readBinding(config, key) {
-  const block = config.slice(config.indexOf("[[d1_databases]]"));
-  if (!block) throw new Error("no [[d1_databases]] block in wrangler.toml");
+  const start = config.indexOf("[[d1_databases]]");
+  if (start === -1) throw new Error("no [[d1_databases]] block in wrangler.toml");
+  const block = config.slice(start);
   const match = block.match(new RegExp(`^\\s*${key}\\s*=\\s*"([^"]*)"`, "m"));
   return match ? match[1] : "";
 }
@@ -83,7 +124,41 @@ function writeDatabaseId(config, id) {
   return head + updated + tail;
 }
 
+/**
+ * `wrangler d1 list --json` prints a banner before the payload, so slice from
+ * the first bracket instead of parsing stdout as-is.
+ *
+ * `VPS_DOG_D1_LIST_JSON` overrides the lookup with a canned database list so
+ * the decision logic below can be exercised without spawning Wrangler — useful
+ * for offline diagnosis and for sandboxes that block child processes. Never
+ * set it during a real deploy.
+ */
+function listDatabases() {
+  const injected = process.env.VPS_DOG_D1_LIST_JSON;
+  const raw = injected === undefined ? wrangler(["d1", "list", "--json"]) : injected;
+  const start = raw.indexOf("[");
+  if (start === -1) {
+    throw new Error(`unexpected \`wrangler d1 list --json\` output:\n${raw.trim().slice(0, 400)}`);
+  }
+  const parsed = JSON.parse(raw.slice(start));
+  if (!Array.isArray(parsed)) throw new Error("`wrangler d1 list --json` did not return an array");
+  return parsed;
+}
+
+function bind(databaseName, database, how) {
+  if (checkOnly) {
+    log(`would bind "${database.name}" (${database.uuid}) — ${how}`);
+    return;
+  }
+  writeFileSync(configPath, writeDatabaseId(readFileSync(configPath, "utf8"), database.uuid));
+  log(`${how} D1 "${databaseName}" (${database.uuid}); ${configPath} updated`);
+}
+
 function main() {
+  if (ifCi && !inWorkersBuilds()) {
+    log("not running in Cloudflare Workers Builds; skipping D1 provisioning");
+    return;
+  }
   if (!existsSync(configPath)) throw new Error(`${configPath} not found`);
 
   const config = readFileSync(configPath, "utf8");
@@ -91,45 +166,67 @@ function main() {
   const databaseId = readBinding(config, "database_id");
   if (!databaseName) throw new Error("[[d1_databases]] has no database_name");
 
-  const isPlaceholder = !databaseId || databaseId === databaseName ||
-    !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(databaseId);
+  const databases = listDatabases();
 
-  const databases = JSON.parse(wrangler(["d1", "list", "--json"]));
-  const existing = databases.find((db) => db.name === databaseName || db.uuid === databaseId);
+  // 1. The configured id is real. Note this is an identity check, not a
+  //    format check — that distinction is the whole point of this script.
+  if (databaseId && databases.some((db) => db.uuid === databaseId)) {
+    log(`D1 "${databaseName}" already configured (${databaseId})`);
+    return;
+  }
+  if (databaseId) {
+    warn(`database_id "${databaseId}" is not visible in this account — repairing`);
+  }
 
-  if (existing) {
-    if (existing.uuid === databaseId && !isPlaceholder) {
-      console.log(`[vps-dog] D1 "${databaseName}" already configured (${databaseId})`);
-      return;
-    }
-    console.log(`[vps-dog] found existing D1 "${databaseName}" (${existing.uuid}); binding it`);
-    writeFileSync(configPath, writeDatabaseId(config, existing.uuid));
+  // 2. Same name, different id: adopt it rather than creating a duplicate.
+  const byName = databases.find((db) => db.name === databaseName);
+  if (byName) {
+    bind(databaseName, byName, "found existing");
     return;
   }
 
-  if (!isPlaceholder) {
-    // The config points at a specific database that this account cannot see —
-    // creating a new one here would silently orphan the configured one.
+  // 3. Nothing to adopt: create it.
+  if (process.env.VPS_DOG_D1_NO_CREATE === "1") {
     throw new Error(
-      `D1 "${databaseName}" (id ${databaseId}) is not visible in this account. ` +
-      "Check CLOUDFLARE_ACCOUNT_ID, or clear database_id to let this script create it.",
+      `D1 "${databaseName}" does not exist and VPS_DOG_D1_NO_CREATE=1 is set`,
     );
   }
+  if (checkOnly) {
+    log(`would create D1 "${databaseName}"`);
+    return;
+  }
 
-  console.log(`[vps-dog] no D1 named "${databaseName}"; creating it`);
+  log(`no D1 named "${databaseName}" in this account; creating it`);
   wrangler(["d1", "create", databaseName]);
   // Re-list rather than scraping `create` output, which is not stable JSON.
-  const created = JSON.parse(wrangler(["d1", "list", "--json"]))
-    .find((db) => db.name === databaseName);
-  if (!created) throw new Error(`created D1 "${databaseName}" but could not read its id`);
-
-  console.log(`[vps-dog] created D1 "${databaseName}" (${created.uuid}); binding it`);
-  writeFileSync(configPath, writeDatabaseId(config, created.uuid));
+  const created = listDatabases().find((db) => db.name === databaseName);
+  if (!created) throw new Error(`created D1 "${databaseName}" but it is not listed yet`);
+  bind(databaseName, created, "created");
 }
+
+const AUTH_HINT = [
+  "  This account could not be selected or authenticated. Fix with one of:",
+  "    - Cloudflare dashboard -> the Worker -> Settings -> Build -> Variables,",
+  "      add CLOUDFLARE_ACCOUNT_ID (Workers Builds needs it when the token",
+  "      can reach more than one account);",
+  "    - locally: export CLOUDFLARE_ACCOUNT_ID=<id> (see `wrangler whoami`),",
+  "      or export CLOUDFLARE_API_TOKEN=<token> with D1:Edit permission.",
+].join("\n");
 
 try {
   main();
 } catch (error) {
-  console.error(`[vps-dog] ensure-d1 failed: ${error.message}`);
+  const message = error.message || String(error);
+  if (ifCi) {
+    // The `build` script uses this path. A build must not fail over optional
+    // provisioning: `wrangler deploy` reports the authoritative error anyway.
+    warn(`could not provision D1 automatically: ${message}`);
+    warn("continuing — the deploy step will report the authoritative error");
+    process.exit(0);
+  }
+  console.error(`${tag} ensure-d1 failed: ${message}`);
+  if (/account|authenticat|10000|10023|403|Unauthorized|login/i.test(message)) {
+    console.error(AUTH_HINT);
+  }
   process.exit(1);
 }
