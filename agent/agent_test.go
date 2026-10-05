@@ -8,10 +8,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vps-dog/agent/internal/client"
-	"github.com/vps-dog/agent/internal/collector"
-	"github.com/vps-dog/agent/internal/config"
-	"github.com/vps-dog/agent/internal/probe"
+	"github.com/heshang2011/vps-dog/agent/internal/client"
+	"github.com/heshang2011/vps-dog/agent/internal/collector"
+	"github.com/heshang2011/vps-dog/agent/internal/config"
+	"github.com/heshang2011/vps-dog/agent/internal/probe"
 )
 
 func TestMockRoundTrip(t *testing.T) {

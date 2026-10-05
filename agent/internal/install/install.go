@@ -231,7 +231,7 @@ func RenderUnit(binary, config string) string {
 	}
 	return fmt.Sprintf(`[Unit]
 Description=VPS-DOG monitoring agent
-Documentation=https://github.com/vps-dog/VPS-DOG
+Documentation=https://github.com/heshang2011/vps-dog
 After=network-online.target
 Wants=network-online.target
 

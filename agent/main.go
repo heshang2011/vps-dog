@@ -20,11 +20,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/vps-dog/agent/internal/client"
-	"github.com/vps-dog/agent/internal/collector"
-	"github.com/vps-dog/agent/internal/config"
-	"github.com/vps-dog/agent/internal/install"
-	"github.com/vps-dog/agent/internal/probe"
+	"github.com/heshang2011/vps-dog/agent/internal/client"
+	"github.com/heshang2011/vps-dog/agent/internal/collector"
+	"github.com/heshang2011/vps-dog/agent/internal/config"
+	"github.com/heshang2011/vps-dog/agent/internal/install"
+	"github.com/heshang2011/vps-dog/agent/internal/probe"
 )
 
 const logPrefix = "[vps-dog]"

@@ -58,7 +58,7 @@ with zero dependencies.
 ### 1. Deploy the panel
 
 ```bash
-git clone https://github.com/vps-dog/vps-dog.git
+git clone https://github.com/heshang2011/vps-dog.git
 cd vps-dog
 
 pnpm install
@@ -85,7 +85,7 @@ In `/admin/nodes` → **Add node** → copy the token (shown **once**).
 ### 3. Install the agent
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/vps-dog/vps-dog/main/agent/install.sh \
+curl -fsSL https://raw.githubusercontent.com/heshang2011/vps-dog/main/agent/install.sh \
   | sudo bash -s -- -s https://vps-dog.<you>.workers.dev -t <TOKEN> -n hk-01
 ```
 

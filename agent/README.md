@@ -70,7 +70,7 @@ non-Linux systems.
 ### One-liner (systemd)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/vps-dog/VPS-DOG/main/agent/install.sh \
+curl -fsSL https://raw.githubusercontent.com/heshang2011/vps-dog/main/agent/install.sh \
   | sudo bash -s -- -s https://vps-dog.example.workers.dev -t <token>
 ```
 

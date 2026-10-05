@@ -62,4 +62,4 @@ The first public release. Everything below is new.
 - Documentation: deployment guide, HTTP API reference, architecture notes, contributing
   guide, security policy and the frozen interface contract.
 
-[1.0.0]: https://github.com/vps-dog/vps-dog/releases/tag/v1.0.0
+[1.0.0]: https://github.com/heshang2011/vps-dog/releases/tag/v1.0.0

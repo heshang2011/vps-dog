@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # VPS-DOG agent one-liner installer.
 #
-#   curl -fsSL https://raw.githubusercontent.com/vps-dog/VPS-DOG/main/agent/install.sh | bash -s -- -s <server> -t <token>
+#   curl -fsSL https://raw.githubusercontent.com/heshang2011/vps-dog/main/agent/install.sh | bash -s -- -s <server> -t <token>
 #
 # It detects the architecture, downloads the matching release binary, writes
 # /etc/vps-dog/agent.yaml and /etc/systemd/system/vps-dog.service, then enables
@@ -19,7 +19,7 @@
 #   -h           show help
 set -euo pipefail
 
-REPO="${VPSDOG_REPO:-vps-dog/VPS-DOG}"
+REPO="${VPSDOG_REPO:-heshang2011/vps-dog}"
 BIN_NAME="vps-dog"
 BIN_PATH="/usr/local/bin/${BIN_NAME}"
 CONFIG_DIR="/etc/vps-dog"

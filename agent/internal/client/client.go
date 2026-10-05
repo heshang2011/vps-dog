@@ -16,8 +16,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vps-dog/agent/internal/collector"
-	"github.com/vps-dog/agent/internal/probe"
+	"github.com/heshang2011/vps-dog/agent/internal/collector"
+	"github.com/heshang2011/vps-dog/agent/internal/probe"
 )
 
 // ReportRequest is the POST /api/v1/report body (§4.1).

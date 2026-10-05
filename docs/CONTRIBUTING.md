@@ -6,7 +6,7 @@ conventions we care about, and how releases are cut.
 ## Getting set up
 
 ```bash
-git clone https://github.com/vps-dog/vps-dog.git
+git clone https://github.com/heshang2011/vps-dog.git
 cd vps-dog
 pnpm install
 ```

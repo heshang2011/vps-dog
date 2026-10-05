@@ -23,7 +23,7 @@ node -v && pnpm -v && npx wrangler --version
 ## 1. Clone and build the frontend
 
 ```bash
-git clone https://github.com/vps-dog/vps-dog.git
+git clone https://github.com/heshang2011/vps-dog.git
 cd vps-dog
 pnpm install
 pnpm build          # emits web/dist — the Worker serves this as static assets
@@ -110,7 +110,7 @@ Open the URL, click **Admin**, log in with `admin` + your password.
 4. Install the agent:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/vps-dog/vps-dog/main/agent/install.sh \
+curl -fsSL https://raw.githubusercontent.com/heshang2011/vps-dog/main/agent/install.sh \
   | sudo bash -s -- -s https://vps-dog.<your-subdomain>.workers.dev -t <TOKEN> -n hk-01
 ```
 
