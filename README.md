@@ -95,7 +95,7 @@ pnpm build && pnpm run deploy
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/heshang2011/vps-dog/main/agent/install.sh \
-  | sudo bash -s -- -s https://<你的项目名>.<子域>.workers.dev -t <TOKEN> -n hk-01
+  | bash -s -- -s https://<你的项目名>.<子域>.workers.dev -t <TOKEN> -n hk-01
 ```
 
 节点会在约 10 秒内出现在仪表盘上。

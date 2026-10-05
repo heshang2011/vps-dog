@@ -69,7 +69,7 @@ tls_skip_verify: false
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/heshang2011/vps-dog/main/agent/install.sh \
-  | sudo bash -s -- -s https://vps-dog.example.workers.dev -t <token>
+  | bash -s -- -s https://vps-dog.example.workers.dev -t <token>
 ```
 
 `install.sh` 会检测架构、下载匹配的发布二进制文件、

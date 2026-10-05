@@ -185,7 +185,7 @@ Uploaded vps-dog (1.23 sec)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/heshang2011/vps-dog/main/agent/install.sh \
-  | sudo bash -s -- -s https://vps-dog.<your-subdomain>.workers.dev -t <TOKEN> -n hk-01
+  | bash -s -- -s https://vps-dog.<your-subdomain>.workers.dev -t <TOKEN> -n hk-01
 ```
 
 5. `journalctl -u vps-dog -f` 应显示每 30 秒一次的上报，并且该节点会在仪表盘上变绿。

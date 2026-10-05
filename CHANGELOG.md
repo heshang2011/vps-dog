@@ -15,6 +15,13 @@
 
 ### 修复
 
+- **安装命令不再硬编码 `sudo`。** 有一类环境（Docker 容器、LXC 模板）以 root 运行但**没有 sudo**，
+  `curl … | sudo bash` 在脚本执行前就失败 —— 实际报错是 `bash: sudo: command not found`，
+  后面那句 `curl: (23) Failure writing output to destination` 只是管道下游退出后的次生错误。
+  现在 `install.sh` 自己判断权限：已是 root 就直接执行；非 root 且存在 sudo 时只给需要提权的
+  命令加前缀；两者都不满足才报错。写 `/etc/vps-dog/agent.yaml` 与 service 文件也改用 `$SUDO tee`
+  （重定向由当前 shell 执行，`cat >` 在非 root 下照样写不进去），并预先以 `0600` 建好文件，
+  令牌不会短暂处于可读状态。
 - **部署：`build` 阶段现在完成完整的 D1 配置（建库 + 绑定 + 建表）。** 此前只做了「建库 + 绑定」，
   没有建表，于是 Workers Builds 自动部署出来的站点能打开、但**所有 `/api/*` 都返回 500**
   （`wrangler tail` 里是 `D1_ERROR: no such table: settings`）。现在 `pnpm build` 在 Cloudflare

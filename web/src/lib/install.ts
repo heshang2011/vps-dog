@@ -33,11 +33,12 @@ export interface InstallCommandInput {
 }
 
 /**
- * `curl -fsSL <install.sh> | sudo bash -s -- -s '<origin>' -t '<token>' -n '<name>' [-r '<region>']`
+ * `curl -fsSL <install.sh> | bash -s -- -s '<origin>' -t '<token>' -n '<name>' [-r '<region>']`
  *
- * `sudo` because the installer writes to `/usr/local/bin` and
- * `/etc/systemd/system`. The report interval and TLS flags keep their
- * installer defaults.
+ * No `sudo` here on purpose: `install.sh` escalates by itself. Wrapping the
+ * command in sudo breaks on the many minimal images — Docker containers, LXC
+ * templates — that run as root with no sudo binary installed at all. The report
+ * interval and TLS flags keep their installer defaults.
  */
 export function buildInstallCommand({
   origin,
@@ -50,5 +51,5 @@ export function buildInstallCommand({
   const trimmedRegion = region?.trim() ?? '';
   if (trimmedRegion.length > 0) args.push(`-r ${quote(trimmedRegion)}`);
 
-  return `curl -fsSL ${INSTALL_SCRIPT_URL} | sudo bash -s -- ${args.join(' ')}`;
+  return `curl -fsSL ${INSTALL_SCRIPT_URL} | bash -s -- ${args.join(' ')}`;
 }
