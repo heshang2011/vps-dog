@@ -521,9 +521,12 @@ tls_skip_verify: false
 并保留最后一次已知的上报间隔。日志以 `[vps-dog]` 前缀输出到 stdout。
 
 **另外必须提供：**
-- `agent/install.sh` —— 面向 systemd 系统的一行命令安装脚本
+- `agent/install.sh` —— 一行命令安装脚本
   （`curl -fsSL .../install.sh | bash -s -- -s <server> -t <token>`），写入
-  `/etc/systemd/system/vps-dog.service`，并启用 + 启动它。
+  `/etc/vps-dog/agent.yaml`；有 systemd 时写 `/etc/systemd/system/vps-dog.service`
+  并启用 + 启动它，**没有 systemd 时**（Docker 容器、LXC 模板）改为 `nohup`
+  后台启动，PID 写 `/run/vps-dog.pid`、日志写 `/var/log/vps-dog.log`。
+  需要 root，但**不要求命令带 `sudo`** —— 脚本自行判断并提权。
 - `agent/build.sh` + `agent/build.ps1` —— 交叉编译 linux/amd64、linux/arm64、
   linux/armv7、darwin/amd64、darwin/arm64、windows/amd64 到 `dist/`。
 - `go.mod` 模块路径 `github.com/vps-dog/agent`，Go 1.22+，**零外部

@@ -3,9 +3,11 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/heshang2011/vps-dog/main/agent/install.sh | bash -s -- -s <server> -t <token>
 #
-# It detects the architecture, downloads the matching release binary, writes
-# /etc/vps-dog/agent.yaml and /etc/systemd/system/vps-dog.service, then enables
-# and starts the service.
+# It detects the architecture, downloads the matching release binary and writes
+# /etc/vps-dog/agent.yaml. Where systemd is available it also installs and starts
+# a service unit; elsewhere — Docker containers, LXC templates, anything with no
+# init system — the agent is started detached instead. Root is required, but
+# sudo is not: the script escalates by itself when it needs to.
 #
 # Flags:
 #   -s <url>     worker base URL                 (required)
@@ -38,6 +40,11 @@ UNINSTALL="false"
 # check below). Every command that writes outside the temp dir is prefixed
 # with it, so the whole installer works both as root and as a sudo user.
 SUDO=""
+# Set during preflight. Without systemd the agent is started with nohup and the
+# operator (or the container runtime) is responsible for keeping it alive.
+HAVE_SYSTEMD="false"
+LOG_PATH="/var/log/${BIN_NAME}.log"
+PID_PATH="/run/${BIN_NAME}.pid"
 
 log()  { printf '\033[36m[vps-dog]\033[0m %s\n' "$*"; }
 warn() { printf '\033[33m[vps-dog]\033[0m %s\n' "$*" >&2; }
@@ -57,6 +64,38 @@ Flags:
   -u           uninstall instead of installing
   -h           show help
 EOF
+}
+
+# ── background supervision (the no-systemd fallback) ─────────────────────
+# Docker containers and LXC templates frequently have no init system at all,
+# which is a perfectly reasonable place to run a monitoring agent. There the
+# process is started detached instead of as a service unit. Everything runs
+# inside `$SUDO sh -c '…'` so that the redirection, the backgrounding and the
+# `$!` capture all happen with the right privileges.
+start_background() {
+  stop_background
+  $SUDO install -m 0640 /dev/null "$LOG_PATH"
+  $SUDO sh -c "nohup '${BIN_PATH}' -c '${CONFIG_PATH}' >> '${LOG_PATH}' 2>&1 & echo \$! > '${PID_PATH}'"
+}
+
+stop_background() {
+  if [ -f "$PID_PATH" ]; then
+    pid="$(cat "$PID_PATH" 2>/dev/null || true)"
+    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+      $SUDO kill "$pid" 2>/dev/null || true
+      sleep 1
+      $SUDO kill -9 "$pid" 2>/dev/null || true
+    fi
+    $SUDO rm -f "$PID_PATH"
+  fi
+  # Also catch an instance whose PID file is gone — a restarted container
+  # clears /run, which is usually a tmpfs.
+  $SUDO pkill -x "${BIN_NAME}" 2>/dev/null || true
+}
+
+background_running() {
+  pid="$(cat "$PID_PATH" 2>/dev/null || true)"
+  [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null
 }
 
 while getopts ':s:t:n:r:i:v:kuh' opt; do
@@ -91,17 +130,27 @@ if [ "$(id -u)" -ne 0 ]; then
   fi
 fi
 
-if ! command -v systemctl >/dev/null 2>&1 || [ ! -d /run/systemd/system ]; then
-  die "systemd was not found; install the binary manually and run it under your init system"
+# systemd is preferred but not required: Docker containers and LXC templates
+# routinely have no init system, and refusing to install there would be
+# needlessly strict. Without it the agent is started detached instead (see
+# start_background) and the operator keeps it alive.
+if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
+  HAVE_SYSTEMD="true"
+else
+  warn "systemd not detected — the agent will run detached instead of as a service unit"
 fi
 
 if [ "$UNINSTALL" = "true" ]; then
   log "stopping and disabling ${BIN_NAME}"
+  # Both paths are attempted: the host may have gained or lost systemd since the
+  # agent was installed, and each command is a harmless no-op when it does not
+  # apply.
   $SUDO systemctl disable --now "${BIN_NAME}" 2>/dev/null || true
   $SUDO rm -f "$SERVICE_PATH"
   $SUDO systemctl daemon-reload 2>/dev/null || true
   $SUDO systemctl reset-failed "${BIN_NAME}" 2>/dev/null || true
-  log "service removed. Config kept at ${CONFIG_PATH}; delete it with: ${SUDO} rm -rf ${CONFIG_DIR} ${BIN_PATH}"
+  stop_background
+  log "agent stopped. Config kept at ${CONFIG_PATH}; delete it with: ${SUDO} rm -rf ${CONFIG_DIR} ${BIN_PATH}"
   exit 0
 fi
 
@@ -204,8 +253,9 @@ tls_skip_verify: ${TLS_SKIP}
 EOF
 log "wrote ${CONFIG_PATH}"
 
-$SUDO install -m 0644 /dev/null "$SERVICE_PATH"
-$SUDO tee "$SERVICE_PATH" >/dev/null <<EOF
+if [ "$HAVE_SYSTEMD" = "true" ]; then
+  $SUDO install -m 0644 /dev/null "$SERVICE_PATH"
+  $SUDO tee "$SERVICE_PATH" >/dev/null <<EOF
 [Unit]
 Description=VPS-DOG monitoring agent
 Documentation=https://github.com/${REPO}
@@ -229,17 +279,34 @@ ReadWritePaths=${CONFIG_DIR}
 [Install]
 WantedBy=multi-user.target
 EOF
-log "wrote ${SERVICE_PATH}"
+  log "wrote ${SERVICE_PATH}"
 
-$SUDO systemctl daemon-reload
-$SUDO systemctl enable --now "${BIN_NAME}"
+  $SUDO systemctl daemon-reload
+  $SUDO systemctl enable --now "${BIN_NAME}"
 
-sleep 1
-if $SUDO systemctl is-active --quiet "${BIN_NAME}"; then
-  log "service is running"
-  log "check status with: systemctl status ${BIN_NAME}"
-  log "follow logs with:  journalctl -u ${BIN_NAME} -f"
+  sleep 1
+  if $SUDO systemctl is-active --quiet "${BIN_NAME}"; then
+    log "service is running"
+    log "check status with: systemctl status ${BIN_NAME}"
+    log "follow logs with:  journalctl -u ${BIN_NAME} -f"
+  else
+    warn "service is not active yet; inspect it with: journalctl -u ${BIN_NAME} -n 50 --no-pager"
+    exit 1
+  fi
 else
-  warn "service is not active yet; inspect it with: journalctl -u ${BIN_NAME} -n 50 --no-pager"
-  exit 1
+  start_background
+
+  sleep 1
+  if background_running; then
+    log "agent is running detached (pid $(cat "$PID_PATH"))"
+    log "follow logs with:  tail -f ${LOG_PATH}"
+    log "stop it with:      kill $(cat "$PID_PATH")"
+    log "uninstall with:   re-run this script adding -u"
+    warn "nothing restarts it after a reboot: no systemd here. Add"
+    warn "  ${BIN_PATH} -c ${CONFIG_PATH} &"
+    warn "to your container entrypoint / rc.local, or run it under your supervisor."
+  else
+    warn "the agent does not appear to be running; check ${LOG_PATH}"
+    exit 1
+  fi
 fi

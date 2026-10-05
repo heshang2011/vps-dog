@@ -7,6 +7,13 @@
 
 ### 新增
 
+- **`install.sh` 在无 systemd 的环境里也能用了。** Docker 容器、LXC 模板这类环境
+  往往以 root 运行却**没有 init 系统**，此前脚本会直接报 `systemd was not found` 拒绝安装。
+  现在一分为二：有 systemd 时行为不变（写 `vps-dog.service` 并启用）；没有时用 `nohup`
+  后台启动，PID 写 `/run/vps-dog.pid`、日志写 `/var/log/vps-dog.log`，并在结束时明确提示
+  「无 systemd 时进程不会自动重启，请写进 entrypoint 或用 supervisor 托管」。卸载（`-u`）
+  两条路径都会停。注意：二进制自带的 `-install` / `-uninstall` 仍然要求 root 加 systemd，
+  容器场景请走 `install.sh`。
 - **创建节点后直接给出可复制的安装命令。** 此前那个对话框只显示一次性令牌，操作者还得自己
   拼 `curl … | sudo bash -s -- -s … -t …`。现在同一个对话框里同时展示令牌与完整命令 ——
   `-s` 取当前站点的 `origin`，节点填了地区时自动带上 `-r` —— 一键复制即可粘到服务器执行。

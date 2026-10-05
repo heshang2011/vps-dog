@@ -65,16 +65,29 @@ tls_skip_verify: false
 
 ## 安装
 
-### 一行命令（systemd）
+### 一行命令
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/heshang2011/vps-dog/main/agent/install.sh \
   | bash -s -- -s https://vps-dog.example.workers.dev -t <token>
 ```
 
-`install.sh` 会检测架构、下载匹配的发布二进制文件、
-写入 `/etc/vps-dog/agent.yaml` 与 `/etc/systemd/system/vps-dog.service`，
-然后启用并启动服务。加 `-u` 运行即可卸载。
+`install.sh` 会检测架构、下载匹配的发布二进制文件、写入 `/etc/vps-dog/agent.yaml`，
+然后按环境选择启动方式：
+
+| 环境 | 行为 | 管理方式 |
+| --- | --- | --- |
+| 有 systemd | 写入 `/etc/systemd/system/vps-dog.service` 并启用 | `systemctl status vps-dog`、`journalctl -u vps-dog -f` |
+| 无 systemd（Docker 容器、LXC 模板等） | `nohup` 后台启动，PID 写入 `/run/vps-dog.pid`，日志写 `/var/log/vps-dog.log` | `kill $(cat /run/vps-dog.pid)`、`tail -f /var/log/vps-dog.log` |
+
+**命令里不要加 `sudo`**：脚本需要 root，但会自己判断 —— 已经是 root 就直接执行，
+非 root 且系统有 sudo 时才用它提权。容器往往恰好是「root 但没有 sudo」，
+此时 `curl … | sudo bash` 会在脚本运行前就失败。
+
+无 systemd 时进程**不会自动重启**（没有 init 系统可依赖）。容器场景请把
+`/usr/local/bin/vps-dog -c /etc/vps-dog/agent.yaml &` 写进 entrypoint，或用 supervisor 托管。
+
+加 `-u` 重新运行即可卸载，两种模式都会停掉。
 
 ### 内置安装脚本
 
@@ -86,8 +99,8 @@ sudo vps-dog -uninstall            # keeps /etc/vps-dog/agent.yaml
 sudo vps-dog -uninstall -purge     # removes the config directory and the binary
 ```
 
-两条路径都要求 root **和**运行中的 systemd；否则它们会给出明确的提示并拒绝执行，
-而不是装到一半就停下。
+这两条要求 root **和**运行中的 systemd；不满足时会明确报错退出，不会装到一半就停下。
+容器等无 systemd 环境请改用上面的 `install.sh`。
 
 ---
 
