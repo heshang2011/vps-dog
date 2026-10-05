@@ -1,8 +1,8 @@
 import { defineConfig } from 'vitest/config';
 import { cloudflareTest, readD1Migrations } from '@cloudflare/vitest-pool-workers';
 
-// NOTE: tests run against `wrangler.test.toml`, NOT `wrangler.toml`.
-// `wrangler.toml` points `[assets].directory` at `../web/dist`, which does not
+// NOTE: tests run against `wrangler.test.toml`, NOT the root `wrangler.toml`.
+// The root config points `[assets].directory` at `web/dist`, which does not
 // exist while only the worker is being developed; Miniflare refuses to boot
 // with a missing assets directory. `wrangler.test.toml` is the same config with
 // `[assets]` removed, so the suite never depends on the frontend build.

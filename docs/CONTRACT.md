@@ -41,7 +41,7 @@ VPS-DOG/
 │   │       └── admin.ts    # /api/auth/*, /api/admin/*
 │   ├── migrations/         # 0001_init.sql ...  [APPLIED IN FILENAME ORDER]
 │   ├── test/               # vitest + @cloudflare/vitest-pool-workers
-│   ├── wrangler.toml
+│   ├── wrangler.test.toml  # test-only config (no [assets]); see §4.5
 │   ├── package.json
 │   └── tsconfig.json
 ├── web/                    # React 19 + Vite + TypeScript SPA  [owner: web-frontend]
@@ -57,6 +57,9 @@ VPS-DOG/
 │   └── build.sh / build.ps1
 ├── docs/                   # [owner: docs-devops]
 ├── .github/workflows/      # [owner: docs-devops]
+├── wrangler.toml           # Worker deploy config — MUST stay at the repo root
+├── .dev.vars.example       # secret template read by the Deploy to Cloudflare flow
+├── package.json            # root scripts: build / deploy / test / typecheck
 ├── README.md               # [owner: lead]
 └── LICENSE                 # [owner: lead]  MIT
 ```
@@ -425,14 +428,33 @@ Worker 通过 `ASSETS` 绑定提供构建后的 SPA。`run_worker_first` 为
 `true`，因此 Worker 渲染 HTML 外壳（用于注入 `custom_head`）；
 静态资源仍由该绑定提供。任何不在 `/api` 之下、且
 不匹配文件的 `GET` 都会回退到 `index.html`（SPA 路由）。
-`wrangler.toml`：
+
+部署配置位于**仓库根目录**的 `wrangler.toml`（Cloudflare 的
+「Deploy to Cloudflare」按钮只读取仓库根目录的配置，因此它不能放在
+`worker/` 子目录里）：
 
 ```toml
+name = "vps-dog"
+main = "worker/src/index.ts"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "vps-dog"
+database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"   # provisioned by the button
+migrations_dir = "worker/migrations"
+
 [assets]
-directory = "../web/dist"
+directory = "web/dist"
 binding = "ASSETS"
 not_found_handling = "single-page-application"
 run_worker_first = true
+```
+
+数据库迁移必须用 **binding 名（`DB`）** 而不是数据库名来执行，这样即使
+使用者把数据库命名成别的名字也依然可用：
+
+```bash
+wrangler d1 migrations apply DB --remote
 ```
 
 ---

@@ -46,26 +46,42 @@
 
 ## 快速开始
 
-### 1. 部署面板
+### 一键部署到 Cloudflare
+
+点下面的按钮，Cloudflare 会自动把你的副本克隆到你的 GitHub 账号，创建并绑定 **D1 数据库**、执行数据库迁移，然后完成部署：
+
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/heshang2011/vps-dog)
+
+部署过程中会要求你填写：
+
+| 项目 | 说明 |
+| --- | --- |
+| `ADMIN_PASSWORD` | 首次登录用的 `admin` 密码。**建议现在就改掉默认值。** |
+
+部署完成后打开 Cloudflare 给出的 `https://<你的项目名>.<子域>.workers.dev`，进入 `/admin` 登录即可。
+
+> 首次登录会自动创建管理员账号（用户名 `admin`，密码即上一步填写的值）。登录后请立刻在 `/admin/users` 中修改密码。
+
+<details>
+<summary>手动部署（不想用一键按钮）</summary>
 
 ```bash
 git clone https://github.com/heshang2011/vps-dog.git
 cd vps-dog
 
 pnpm install
-pnpm build                     # builds web/dist
+pnpm build                     # 生成 web/dist
 
-cd worker
 npx wrangler login
-npx wrangler d1 create vps-dog          # copy the printed database_id into wrangler.toml
-npx wrangler d1 migrations apply vps-dog --remote
-npx wrangler secret put ADMIN_PASSWORD  # the initial admin password
+npx wrangler d1 create vps-dog          # 把输出的 database_id 填进根目录 wrangler.toml
+npx wrangler d1 migrations apply DB --remote
+npx wrangler secret put ADMIN_PASSWORD  # 初始管理员密码
 npx wrangler deploy
 ```
 
-打开输出的 `https://vps-dog.<you>.workers.dev` 地址，进入 `/admin`，用 `admin` 和刚设置的密码登录。
+> 更习惯用仪表盘？也可以在 Cloudflare 仪表盘中创建 D1 数据库，再把它的 ID 粘贴到根目录的 `wrangler.toml`。
 
-> 更习惯用仪表盘？也可以在 Cloudflare 仪表盘中创建 D1 数据库，再把它的 ID 粘贴到 `worker/wrangler.toml`。
+</details>
 
 ### 2. 添加节点
 
@@ -75,7 +91,7 @@ npx wrangler deploy
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/heshang2011/vps-dog/main/agent/install.sh \
-  | sudo bash -s -- -s https://vps-dog.<you>.workers.dev -t <TOKEN> -n hk-01
+  | sudo bash -s -- -s https://<你的项目名>.<子域>.workers.dev -t <TOKEN> -n hk-01
 ```
 
 节点会在约 10 秒内出现在仪表盘上。
@@ -119,6 +135,7 @@ journalctl -u vps-dog -f
 
 | 路径 | 说明 |
 | --- | --- |
+| [`wrangler.toml`](wrangler.toml) | Worker 的部署配置（位于仓库根目录，供一键部署按钮读取） |
 | [`worker/`](worker) | Cloudflare Worker：Hono API、D1 访问层、定时任务、vitest 测试套件 |
 | [`web/`](web) | React 19 + Vite + Tailwind v4 SPA（仪表盘 + 管理后台） |
 | [`agent/`](agent) | Go Agent：采集器、探测任务、安装脚本、交叉编译脚本 |
@@ -138,7 +155,7 @@ journalctl -u vps-dog -f
 pnpm install
 
 # terminal 1 — Worker API on http://127.0.0.1:8787
-pnpm --filter @vps-dog/worker db:migrate:local
+pnpm db:migrate:local
 pnpm dev:worker
 
 # terminal 2 — Vite dev server with /api proxied to the Worker

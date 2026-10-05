@@ -19,6 +19,20 @@ node -v && pnpm -v && npx wrangler --version
 
 ---
 
+## 0. 一键部署（推荐）
+
+点下面的按钮，Cloudflare 会自动：把你的副本克隆到你的 GitHub 账号 → 创建并绑定 **D1 数据库** → 执行迁移 → 构建并部署。
+
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/heshang2011/vps-dog)
+
+配置页只需填写 `ADMIN_PASSWORD`（初始管理员密码）。完成后打开 Cloudflare 给出的 `https://<项目名>.<子域>.workers.dev`，进入 `/admin` 登录。
+
+> 这个按钮读取的是**仓库根目录**的 `wrangler.toml`。Cloudflare 会创建一个真实的 D1 数据库，并把它的 `database_id` 回填到你克隆出来的那份配置里 —— 所以仓库里的占位值不需要你手动改。
+
+**不想用一键按钮？** 从 §1 开始手动部署。
+
+---
+
 ## 1. 克隆并构建前端
 
 ```bash
@@ -28,7 +42,7 @@ pnpm install
 pnpm build          # emits web/dist — the Worker serves this as static assets
 ```
 
-> Worker 的 `[assets]` 绑定指向 `../web/dist`。该目录缺失时，
+> 根目录 `wrangler.toml` 的 `[assets]` 绑定指向 `web/dist`。该目录缺失时，
 > Wrangler/Miniflare **会启动失败**，因此在运行 `wrangler dev` 或
 > `wrangler deploy` 之前先构建 SPA。（Worker 自带的回退页面
 > 仅覆盖绑定完全缺失的情况，例如在测试中。）
@@ -38,7 +52,6 @@ pnpm build          # emits web/dist — the Worker serves this as static assets
 ## 2. 创建 D1 数据库
 
 ```bash
-cd worker
 npx wrangler login
 npx wrangler d1 create vps-dog
 ```
@@ -52,17 +65,19 @@ database_name = "vps-dog"
 database_id = "8f3c1e2a-...."
 ```
 
-把真实的 `database_id` 粘贴到 [`worker/wrangler.toml`](../worker/wrangler.toml) 中，替换 `REPLACE_WITH_YOUR_D1_DATABASE_ID`。
+把真实的 `database_id` 粘贴到根目录的 [`wrangler.toml`](../wrangler.toml) 中，替换 `REPLACE_WITH_YOUR_D1_DATABASE_ID`。
 
 ---
 
 ## 3. 应用迁移
 
 ```bash
-npx wrangler d1 migrations apply vps-dog --remote
+npx wrangler d1 migrations apply DB --remote
 ```
 
 这会创建 `nodes`、`metrics`、`ping_tasks`、`ping_records`、`users`、`sessions`、`settings` 和 `audit_logs`，并写入默认设置。
+
+> 这里用的是 **binding 名 `DB`**，不是数据库名。两者在你自己部署时通常一致，但用 binding 名更稳妥 —— 如果你把数据库命名成别的名字，命令依然有效。
 
 本地开发使用相同的命令并加上 `--local`（见 §7）。
 
@@ -129,9 +144,8 @@ Agent 会在下次上报时获取新探测任务，并立即开始测量。
 
 ```bash
 # terminal 1 — Worker API
-cd worker
-npx wrangler d1 migrations apply vps-dog --local
-npx wrangler dev --port 8787
+pnpm db:migrate:local
+pnpm dev:worker
 
 # terminal 2 — SPA with /api proxied to 127.0.0.1:8787
 pnpm dev
@@ -212,7 +226,7 @@ npx wrangler tail
 ```bash
 git pull
 pnpm install && pnpm build
-cd worker && npx wrangler d1 migrations apply vps-dog --remote && npx wrangler deploy
+pnpm db:migrate:remote && pnpm exec wrangler deploy
 ```
 
 Agent 与 v1 协议向前和向后兼容；升级它们是可选的。重新运行 `install.sh`（或替换二进制文件并执行 `systemctl restart vps-dog`）即可更新。
@@ -227,6 +241,6 @@ Agent 与 v1 协议向前和向后兼容；升级它们是可选的。重新运�
 | Agent 日志中出现 `401 unauthorized` | 令牌已被轮换，或节点已被删除。在 `/admin/nodes` 中签发新令牌。 |
 | 仪表盘一片空白 | 部署前没有构建 `web/dist`。运行 `pnpm build` 并重新部署。 |
 | `/admin` 提示密码错误 | 在用户创建之后才设置 `ADMIN_PASSWORD` 密钥 —— 该密钥只用于初始化*第一个*用户。可在 D1 控制台执行 `DELETE FROM users;` 重置，或直接添加一个用户。 |
-| `no such table` | 迁移被应用到了错误的 database id。请重新检查 `wrangler.toml`。 |
+| `no such table` | 迁移被应用到了错误的 database id。请重新检查根目录的 `wrangler.toml`。 |
 | 新节点上图表为空 | 历史数据至少需要两次上报；等一分钟。 |
 | `D1_ERROR: too many SQL variables` | 只有在你 fork 并修改批次大小时才可能出现；内置清理任务会分批写入。 |

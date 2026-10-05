@@ -129,9 +129,10 @@ jobs:
       - name: Required files
         run: |
           set -e
-          for f in README.md LICENSE .gitignore docs/CONTRACT.md docs/API.md \
-                   docs/DEPLOYMENT.md docs/ARCHITECTURE.md docs/CONTRIBUTING.md \
-                   worker/wrangler.toml worker/migrations/0001_init.sql \
+          for f in README.md LICENSE .gitignore wrangler.toml .dev.vars.example \
+                   docs/CONTRACT.md docs/API.md docs/DEPLOYMENT.md \
+                   docs/ARCHITECTURE.md docs/CONTRIBUTING.md \
+                   worker/migrations/0001_init.sql \
                    agent/go.mod agent/install.sh; do
             test -f "$f" || { echo "missing: $f"; exit 1; }
             echo "ok: $f"

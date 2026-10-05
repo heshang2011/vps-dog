@@ -16,16 +16,15 @@ pnpm install
 
 ```bash
 # 1. local D1 + Worker API on http://127.0.0.1:8787
-cd worker
-npx wrangler d1 migrations apply vps-dog --local
-npx wrangler dev --port 8787
+pnpm db:migrate:local
+pnpm dev:worker
 
 # 2. SPA with /api proxied to the Worker, on http://localhost:5173
 pnpm dev
 ```
 
-在 `/admin` 用 `admin` / `admin` 登录（或你在 `worker/.dev.vars` 里设置的
-任意 `ADMIN_PASSWORD`）。
+在 `/admin` 用 `admin` / `admin` 登录（或你在根目录 `.dev.vars` 里设置的
+任意 `ADMIN_PASSWORD`，可从 `.dev.vars.example` 复制）。
 
 ### 检查
 
@@ -80,9 +79,8 @@ CI 在每次 push 与拉取请求时都会运行这些检查。
 ## 添加迁移
 
 ```bash
-cd worker
-# create migrations/0002_your_change.sql  (never edit an applied migration)
-npx wrangler d1 migrations apply vps-dog --local
+# create worker/migrations/0002_your_change.sql  (never edit an applied migration)
+pnpm db:migrate:local
 ```
 
 迁移按文件名顺序应用。在可行的情况下保持幂等
@@ -135,7 +133,7 @@ chore(ci): cache the pnpm store
 2. `git tag v1.x.y && git push --tags`。
 3. `release` workflow 会为所有目标交叉编译 Agent，并把二进制文件
    连同 `install.sh` 附加到 GitHub 发布中。
-4. 在 `worker/` 中执行 `npx wrangler deploy` 即可发布 Worker；SPA 会在同一次
+4. 在**仓库根目录**执行 `pnpm build && pnpm deploy` 即可发布 Worker；SPA 会在同一次
    部署中上传（assets 绑定）。
 
 ## 问题反馈
