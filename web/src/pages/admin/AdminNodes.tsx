@@ -10,7 +10,7 @@ import { ErrorBanner, PageHeader } from '../../components/PageHeader';
 import { Table, type Column } from '../../components/Table';
 import { useToast } from '../../components/Toast';
 import { adminApi, errorMessage, qk } from '../../lib/api';
-import { relativeTime } from '../../lib/format';
+import { daysUntil, quota, relativeTime } from '../../lib/format';
 import { useI18n } from '../../lib/i18n';
 import { useNow } from '../../lib/useLive';
 import type { AdminNode } from '../../lib/types';
@@ -24,6 +24,9 @@ interface NodeFormState {
   tags: string;
   hidden: boolean;
   sort_order: string;
+  price: string;
+  traffic_gb: string;
+  expires_at: string;
 }
 
 const EMPTY_FORM: NodeFormState = {
@@ -33,6 +36,9 @@ const EMPTY_FORM: NodeFormState = {
   tags: '',
   hidden: false,
   sort_order: '0',
+  price: '',
+  traffic_gb: '',
+  expires_at: '',
 };
 
 function parseTags(value: string): string[] {
@@ -50,6 +56,18 @@ function toForm(node: AdminNode): NodeFormState {
     tags: node.tags.join(', '),
     hidden: node.hidden,
     sort_order: String(node.sort_order),
+    price: node.price,
+    traffic_gb: node.traffic_gb > 0 ? String(node.traffic_gb) : '',
+    expires_at: node.expires_at,
+  };
+}
+
+/** Shared create/edit payload built from the form state. */
+function planPayload(form: NodeFormState) {
+  return {
+    price: form.price.trim(),
+    traffic_gb: Number.parseInt(form.traffic_gb, 10) || 0,
+    expires_at: form.expires_at,
   };
 }
 
@@ -93,6 +111,7 @@ export default function AdminNodes(): ReactNode {
         tags: parseTags(input.tags),
         hidden: input.hidden,
         sort_order: Number.parseInt(input.sort_order, 10) || 0,
+        ...planPayload(input),
       }),
     onSuccess: (data, variables) => {
       invalidate();
@@ -118,6 +137,7 @@ export default function AdminNodes(): ReactNode {
         tags: parseTags(args.input.tags),
         hidden: args.input.hidden,
         sort_order: Number.parseInt(args.input.sort_order, 10) || 0,
+        ...planPayload(args.input),
       }),
     onSuccess: () => {
       invalidate();
@@ -259,6 +279,33 @@ export default function AdminNodes(): ReactNode {
               ))}
             </div>
           ),
+      },
+      {
+        key: 'plan',
+        header: t('admin.nodes.plan'),
+        hideOnMobile: true,
+        render: (node) => {
+          const parts: string[] = [];
+          if (node.price.length > 0) parts.push(node.price);
+          if (node.traffic_gb > 0) parts.push(quota(node.traffic_gb));
+          if (node.expires_at.length > 0) {
+            const days = daysUntil(node.expires_at, now);
+            const expired = days <= 0;
+            const soon = days <= 30;
+            parts.push(
+              `${t('node.expires')} ${node.expires_at}${expired ? ` · ${t('node.expired')}` : soon ? ` · ${days}d` : ''}`,
+            );
+          }
+          if (parts.length === 0) return <span className="text-muted">–</span>;
+          const expired = node.expires_at.length > 0 && daysUntil(node.expires_at, now) <= 0;
+          // No `num` face: the price is free-form text (often CJK) that the
+          // monospaced digits font cannot render.
+          return (
+            <span className={`text-[11px] ${expired ? 'text-danger' : 'text-text'}`}>
+              {parts.join(' · ')}
+            </span>
+          );
+        },
       },
       {
         key: 'token',
@@ -469,6 +516,29 @@ export default function AdminNodes(): ReactNode {
             value={form.sort_order}
             onChange={(event) => setForm((current) => ({ ...current, sort_order: event.target.value }))}
           />
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <Input
+              label={t('admin.nodes.price')}
+              hint={t('admin.nodes.priceHint')}
+              value={form.price}
+              onChange={(event) => setForm((current) => ({ ...current, price: event.target.value }))}
+            />
+            <Input
+              label={t('admin.nodes.traffic')}
+              hint={t('admin.nodes.trafficHint')}
+              type="number"
+              inputMode="numeric"
+              min={0}
+              value={form.traffic_gb}
+              onChange={(event) => setForm((current) => ({ ...current, traffic_gb: event.target.value }))}
+            />
+            <Input
+              label={t('admin.nodes.expires')}
+              type="date"
+              value={form.expires_at}
+              onChange={(event) => setForm((current) => ({ ...current, expires_at: event.target.value }))}
+            />
+          </div>
           <Checkbox
             label={t('admin.nodes.hidden')}
             checked={form.hidden}

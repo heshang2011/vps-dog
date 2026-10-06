@@ -241,6 +241,12 @@ export const adminApi = {
     return request<OkResponse>('/admin/settings', { method: 'PUT', body: patch });
   },
 
+  /* notifications */
+  /** `POST /api/admin/notify/test` — send a test message via the Telegram bot. */
+  sendTelegramTest(): Promise<OkResponse & { sent: boolean }> {
+    return request<OkResponse & { sent: boolean }>('/admin/notify/test', { method: 'POST' });
+  },
+
   /* users */
   listUsers(signal?: AbortSignal): Promise<AdminUsersResponse> {
     return request<AdminUsersResponse>('/admin/users', { signal });

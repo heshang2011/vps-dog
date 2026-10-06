@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { Badge } from '../../components/Badge';
 import { Button } from '../../components/Button';
-import { Input, Textarea } from '../../components/Input';
+import { Checkbox, Input, Textarea } from '../../components/Input';
 import { FormError } from '../../components/Notice';
 import { ErrorBanner, PageHeader } from '../../components/PageHeader';
 import { Select } from '../../components/Select';
@@ -21,6 +21,10 @@ interface SettingsForm {
   ping_retention_days: string;
   theme: ThemeSetting;
   custom_head: string;
+  tg_bot_token: string;
+  tg_chat_id: string;
+  tg_notify_offline: boolean;
+  tg_notify_online: boolean;
 }
 
 function toForm(settings: Settings): SettingsForm {
@@ -33,6 +37,10 @@ function toForm(settings: Settings): SettingsForm {
     ping_retention_days: String(settings.ping_retention_days),
     theme: settings.theme,
     custom_head: settings.custom_head,
+    tg_bot_token: settings.tg_bot_token ?? '',
+    tg_chat_id: settings.tg_chat_id ?? '',
+    tg_notify_offline: settings.tg_notify_offline ?? true,
+    tg_notify_online: settings.tg_notify_online ?? false,
   };
 }
 
@@ -67,6 +75,10 @@ export default function AdminSettings(): ReactNode {
         ping_retention_days: Number.parseInt(input.ping_retention_days, 10) || 7,
         theme: input.theme,
         custom_head: input.custom_head,
+        tg_bot_token: input.tg_bot_token.trim(),
+        tg_chat_id: input.tg_chat_id.trim(),
+        tg_notify_offline: input.tg_notify_offline,
+        tg_notify_online: input.tg_notify_online,
       }),
     onSuccess: () => {
       setFormError(null);
@@ -76,6 +88,12 @@ export default function AdminSettings(): ReactNode {
       toast.success(t('admin.settings.saved'));
     },
     onError: (error: unknown) => setFormError(errorMessage(error)),
+  });
+
+  const telegramTestMutation = useMutation({
+    mutationFn: () => adminApi.sendTelegramTest(),
+    onSuccess: () => toast.success(t('admin.settings.tgTestOk')),
+    onError: (error: unknown) => toast.error(errorMessage(error)),
   });
 
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
@@ -181,6 +199,50 @@ export default function AdminSettings(): ReactNode {
               rows={5}
               spellCheck={false}
             />
+          </section>
+
+          <section className="card flex flex-col gap-4 p-5">
+            <h2 className="text-sm font-semibold text-text">{t('admin.settings.group.notifications')}</h2>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Input
+                label={t('admin.settings.tgToken')}
+                type="password"
+                autoComplete="off"
+                spellCheck={false}
+                value={form.tg_bot_token}
+                hint={t('admin.settings.tgTokenHint')}
+                onChange={(event) => setForm({ ...form, tg_bot_token: event.target.value })}
+              />
+              <Input
+                label={t('admin.settings.tgChatId')}
+                value={form.tg_chat_id}
+                hint={t('admin.settings.tgChatIdHint')}
+                onChange={(event) => setForm({ ...form, tg_chat_id: event.target.value })}
+              />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Checkbox
+                label={t('admin.settings.tgOffline')}
+                checked={form.tg_notify_offline}
+                onChange={(event) => setForm({ ...form, tg_notify_offline: event.target.checked })}
+              />
+              <Checkbox
+                label={t('admin.settings.tgOnline')}
+                checked={form.tg_notify_online}
+                onChange={(event) => setForm({ ...form, tg_notify_online: event.target.checked })}
+              />
+            </div>
+            <p className="text-xs text-muted/80">{t('admin.settings.tgHint')}</p>
+            <div>
+              <Button
+                variant="ghost"
+                disabled={form.tg_bot_token.trim() === '' || form.tg_chat_id.trim() === '' || telegramTestMutation.isPending}
+                loading={telegramTestMutation.isPending}
+                onClick={() => telegramTestMutation.mutate()}
+              >
+                {t('admin.settings.tgTest')}
+              </Button>
+            </div>
           </section>
 
           {formError !== null ? <FormError message={formError} /> : null}

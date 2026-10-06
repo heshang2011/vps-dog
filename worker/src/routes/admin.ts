@@ -52,6 +52,7 @@ import {
   updateUserPassword,
   writeAudit,
 } from '../db';
+import { sendTelegramMessage, telegramConfigured, testMessage } from '../notify';
 import type { AppEnv, SessionUser } from '../types';
 import {
   badRequest,
@@ -184,7 +185,7 @@ adminRoutes.use('*', requireAuth);
  * Only mutating methods are gated, so a viewer can still read the panel.
  */
 const MUTATING: string[] = ['POST', 'PATCH', 'PUT', 'DELETE'];
-for (const path of ['/nodes', '/nodes/*', '/pings', '/pings/*', '/settings', '/settings/*', '/users', '/users/*']) {
+for (const path of ['/nodes', '/nodes/*', '/pings', '/pings/*', '/settings', '/settings/*', '/users', '/users/*', '/notify', '/notify/*']) {
   adminRoutes.on(MUTATING, path, requireAdmin());
 }
 adminRoutes.on(MUTATING, '/sweep', requireAdmin());
@@ -219,6 +220,9 @@ adminRoutes.post('/nodes', async (c) => {
     tags: parseTags(body.tags),
     hidden: bool(body.hidden),
     sortOrder: Math.trunc(clampInt(body.sort_order, -1_000_000, 1_000_000, 0)),
+    price: str(body.price),
+    trafficGb: clampInt(body.traffic_gb, 0, 1_000_000, 0),
+    expiresAt: str(body.expires_at),
   });
 
   await audit(c, 'node.create', node.id, name);
@@ -402,6 +406,28 @@ adminRoutes.get('/overview', async (c) => {
   const now = nowSec();
   const settings = await getSettings(c.env.DB);
   return json(c, await getOverview(c.env.DB, settings, now));
+});
+
+// ── notifications ───────────────────────────────────────────────────────────
+
+/**
+ * Deliver a test message through the configured Telegram bot.
+ *
+ * 400 when Telegram is unconfigured, 502 when the API rejects the message or
+ * cannot be reached — the response is what the settings page surfaces, so
+ * failures must be loud here rather than silently logged.
+ */
+adminRoutes.post('/notify/test', async (c) => {
+  const settings = await getSettings(c.env.DB);
+  if (!telegramConfigured(settings)) {
+    return badRequest(c, 'Telegram is not configured: set `tg_bot_token` and `tg_chat_id` first');
+  }
+  const sent = await sendTelegramMessage(settings, testMessage(settings));
+  await audit(c, 'notify.test', '', sent ? 'sent' : 'failed');
+  if (!sent) {
+    return err(c, 502, 'telegram_error', 'Telegram API rejected the message or was unreachable; check the bot token and chat id');
+  }
+  return ok(c, { sent: true });
 });
 
 // ── manual sweep (testing / ops) ────────────────────────────────────────────

@@ -63,6 +63,12 @@ export interface MetricSample {
   load15: number;
 }
 
+/** Static hardware identity reported in the agent's `host` envelope (§4.1). */
+export interface NodeHostInfo {
+  cpu_model: string;
+  cpu_cores: number;
+}
+
 export interface NodeSummary {
   id: string;
   name: string;
@@ -77,6 +83,14 @@ export interface NodeSummary {
   uptime: number; // seconds
   created_at: number;
   metrics: MetricSample | null;
+  /** CPU model / core count; `null` until an agent reports them. */
+  host: NodeHostInfo | null;
+  /** Operator-set plan metadata: free-form price text ('' = unset). */
+  price: string;
+  /** Monthly traffic quota in GB; 0 = unset/unlimited. */
+  traffic_gb: number;
+  /** Expiry date as 'YYYY-MM-DD'; '' = none. */
+  expires_at: string;
   // derived helpers computed by the worker
   cpu: number;
   mem_percent: number;
@@ -165,6 +179,14 @@ export interface Settings {
    * Not listed in the §2.1 table but defaulted there to `false`.
    */
   allow_auto_register: boolean;
+  /** Telegram bot token from @BotFather. Empty disables notifications. */
+  tg_bot_token: string;
+  /** Chat / group / channel id that receives the messages. */
+  tg_chat_id: string;
+  /** Alert when a node goes offline. */
+  tg_notify_offline: boolean;
+  /** Alert when a node comes back online. */
+  tg_notify_online: boolean;
 }
 
 export type SettingsKey = keyof Settings;
@@ -180,6 +202,10 @@ export const SETTINGS_DEFAULTS: Settings = {
   theme: 'auto',
   custom_head: '',
   allow_auto_register: false,
+  tg_bot_token: '',
+  tg_chat_id: '',
+  tg_notify_offline: true,
+  tg_notify_online: false,
 };
 
 export interface AuditLogRow {
@@ -197,4 +223,12 @@ export interface SweepCounts {
   ping_records_deleted: number;
   sessions_deleted: number;
   nodes_marked_offline: number;
+}
+
+/** Result of one cron notify pass (see notify.ts). */
+export interface NotifyScanCounts {
+  offline_sent: number;
+  online_sent: number;
+  /** Messages Telegram refused or could not be reached for; retried next tick. */
+  send_failures: number;
 }

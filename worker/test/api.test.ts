@@ -9,8 +9,9 @@
  * Migrations are applied per test by `test/apply-migrations.ts`.
  */
 import { env, SELF } from 'cloudflare:test';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { clearLoginRateLimits } from '../src/auth';
+import { runNotifyScan } from '../src/notify';
 import type { MetricSample } from '../src/types';
 
 const BASE = 'https://vps-dog.test';
@@ -274,6 +275,76 @@ describe('admin node CRUD', () => {
     expect(res.status).toBe(400);
   });
 
+  it('stores plan metadata (price / traffic / expiry) and serves it back', async () => {
+    const cookie = await adminCookie();
+    const res = await api('/api/admin/nodes', jsonInit({
+      name: 'plan-01',
+      price: '¥20/月',
+      traffic_gb: 500,
+      expires_at: '2027-01-15',
+    }, cookie));
+    expect(res.status).toBe(200);
+    const created = (await res.json()) as { node: Record<string, unknown> };
+    expect(created.node.price).toBe('¥20/月');
+    expect(created.node.traffic_gb).toBe(500);
+    expect(created.node.expires_at).toBe('2027-01-15');
+
+    // PATCH updates each field and can clear them.
+    const patch = await api(`/api/admin/nodes/${created.node.id}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', cookie, 'CF-Connecting-IP': '10.0.0.1' },
+      body: JSON.stringify({ price: '$5/mo', traffic_gb: 1024, expires_at: '2026-12-31' }),
+    });
+    expect(patch.status).toBe(200);
+    const patched = (await patch.json()) as { node: Record<string, unknown> };
+    expect(patched.node.price).toBe('$5/mo');
+    expect(patched.node.traffic_gb).toBe(1024);
+    expect(patched.node.expires_at).toBe('2026-12-31');
+
+    // The public dashboard DTO carries the same fields.
+    const pub = (await (await api('/api/nodes')).json()) as { nodes: Array<Record<string, unknown>> };
+    const row = pub.nodes.find((n) => n.name === 'plan-01');
+    expect(row?.price).toBe('$5/mo');
+    expect(row?.traffic_gb).toBe(1024);
+    expect(row?.expires_at).toBe('2026-12-31');
+
+    // Clearing: empty strings / 0 go back to "unset".
+    const clear = await api(`/api/admin/nodes/${created.node.id}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', cookie, 'CF-Connecting-IP': '10.0.0.1' },
+      body: JSON.stringify({ price: '', traffic_gb: 0, expires_at: '' }),
+    });
+    expect(clear.status).toBe(200);
+    const cleared = (await clear.json()) as { node: Record<string, unknown> };
+    expect(cleared.node.price).toBe('');
+    expect(cleared.node.traffic_gb).toBe(0);
+    expect(cleared.node.expires_at).toBe('');
+  });
+
+  it('normalises malformed plan metadata instead of storing it', async () => {
+    const cookie = await adminCookie();
+    const res = await api('/api/admin/nodes', jsonInit({
+      name: 'plan-bad',
+      price: '   ',
+      traffic_gb: -50,
+      expires_at: 'not-a-date',
+    }, cookie));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { node: Record<string, unknown> };
+    expect(body.node.price).toBe('');
+    expect(body.node.traffic_gb).toBe(0);
+    expect(body.node.expires_at).toBe('');
+
+    // A full ISO timestamp is accepted for the date (agents/clients vary).
+    const patch = await api(`/api/admin/nodes/${body.node.id}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', cookie, 'CF-Connecting-IP': '10.0.0.1' },
+      body: JSON.stringify({ expires_at: '2027-03-01T12:00:00Z' }),
+    });
+    const patched = (await patch.json()) as { node: Record<string, unknown> };
+    expect(patched.node.expires_at).toBe('2027-03-01');
+  });
+
   it('deletes a node together with its metrics and pings', async () => {
     const cookie = await adminCookie();
     const { node, token } = await createNode(cookie, 'del-01');
@@ -323,6 +394,56 @@ describe('admin node CRUD', () => {
 
     const newRes = await api('/api/v1/report', reportInit(newToken, { metrics: sample() }));
     expect(newRes.status).toBe(200);
+  });
+
+  it('stores host hardware info from the report and serves it back', async () => {
+    const cookie = await adminCookie();
+    const { node, token } = await createNode(cookie, 'host-info');
+
+    // Without a `host` envelope: `host` is null, not an empty object.
+    await api('/api/v1/report', reportInit(token, { metrics: sample() }));
+    let body = (await (await api('/api/nodes')).json()) as { nodes: Array<{ id: string; host: unknown }> };
+    expect(body.nodes.find((n) => n.id === node.id)?.host).toBeNull();
+
+    const withHost = api('/api/v1/report', reportInit(token, {
+      metrics: sample(),
+      host: { os: 'Ubuntu 24.04', arch: 'x86_64', cpu_model: 'AMD EPYC 7K62 48-Core Processor', cpu_cores: 4 },
+    }));
+    expect((await withHost).status).toBe(200);
+    body = (await (await api('/api/nodes')).json()) as { nodes: Array<{ id: string; host: unknown }> };
+    expect(body.nodes.find((n) => n.id === node.id)?.host).toEqual({
+      cpu_model: 'AMD EPYC 7K62 48-Core Processor',
+      cpu_cores: 4,
+    });
+
+    // A report without the fields must not erase what was stored (COALESCE).
+    await api('/api/v1/report', reportInit(token, { metrics: sample() }));
+    body = (await (await api('/api/nodes')).json()) as { nodes: Array<{ id: string; host: unknown }> };
+    expect(body.nodes.find((n) => n.id === node.id)?.host).toEqual({
+      cpu_model: 'AMD EPYC 7K62 48-Core Processor',
+      cpu_cores: 4,
+    });
+
+    // Admin view sees the same field.
+    const admin = (await (await api('/api/admin/nodes', { headers: { cookie } })).json()) as {
+      nodes: Array<{ id: string; host: unknown }>;
+    };
+    expect(admin.nodes.find((n) => n.id === node.id)?.host).toEqual({
+      cpu_model: 'AMD EPYC 7K62 48-Core Processor',
+      cpu_cores: 4,
+    });
+  });
+
+  it('ignores malformed host info instead of failing the report', async () => {
+    const cookie = await adminCookie();
+    const { token } = await createNode(cookie, 'host-bad');
+    const res = await api('/api/v1/report', reportInit(token, {
+      metrics: sample(),
+      host: { cpu_model: '   ', cpu_cores: -5 },
+    }));
+    expect(res.status).toBe(200);
+    const body = (await (await api('/api/nodes')).json()) as { nodes: Array<{ host: unknown }> };
+    expect(body.nodes[0]?.host).toBeNull();
   });
 
   it('records an audit row for every mutating call', async () => {
@@ -945,6 +1066,203 @@ describe('overview', () => {
     expect(body.online).toBeGreaterThanOrEqual(1);
     expect(body.metrics_rows).toBeGreaterThanOrEqual(1);
     expect(typeof body.d1_size).toBe('number');
+  });
+});
+
+describe('telegram notifications', () => {
+  const SETTINGS_HEADERS = { 'content-type': 'application/json', 'CF-Connecting-IP': '10.0.0.1' };
+
+  function putSettings(cookie: string, body: Record<string, unknown>): Promise<Response> {
+    return api('/api/admin/settings', { method: 'PUT', headers: { ...SETTINGS_HEADERS, cookie }, body: JSON.stringify(body) });
+  }
+
+  async function readSettings(cookie: string): Promise<Record<string, unknown>> {
+    const res = await api('/api/admin/settings', { headers: { cookie } });
+    expect(res.status).toBe(200);
+    return ((await res.json()) as { settings: Record<string, unknown> }).settings;
+  }
+
+  /**
+   * Replace global fetch with a stub. Tests and the worker share an isolate
+   * (same trick as the login rate limiter), so `notify.ts`'s outbound calls
+   * land here. Returns the mock so tests can inspect calls or override replies.
+   */
+  function stubTelegramFetch(reply: (body: string) => { status: number; body: string }): ReturnType<typeof vi.fn> {
+    const mock = vi.fn(async (_url: unknown, init?: { body?: string }) => {
+      const { status, body } = reply(String(init?.body ?? ''));
+      return new Response(body, { status, headers: { 'content-type': 'application/json' } });
+    });
+    vi.stubGlobal('fetch', mock);
+    return mock;
+  }
+
+  function setLastSeen(nodeId: string, ts: number): Promise<unknown> {
+    return env.DB.prepare('UPDATE nodes SET last_seen = ? WHERE id = ?').bind(ts, nodeId).run();
+  }
+
+  async function flagOf(nodeId: string): Promise<number> {
+    const row = await env.DB.prepare('SELECT notified_offline FROM nodes WHERE id = ?').bind(nodeId).first<{ notified_offline: number }>();
+    return row?.notified_offline ?? -1;
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('exposes the telegram settings with defaults', async () => {
+    const cookie = await adminCookie();
+    const settings = await readSettings(cookie);
+    expect(settings.tg_bot_token).toBe('');
+    expect(settings.tg_chat_id).toBe('');
+    expect(settings.tg_notify_offline).toBe(true);
+    expect(settings.tg_notify_online).toBe(false);
+  });
+
+  it('round-trips telegram settings and trims config strings', async () => {
+    const cookie = await adminCookie();
+    const res = await putSettings(cookie, {
+      tg_bot_token: '  123456:ABC-DEF  ',
+      tg_chat_id: ' 42 ',
+      tg_notify_online: true,
+      unknown_key: 'ignored',
+    });
+    expect(res.status).toBe(200);
+    const settings = await readSettings(cookie);
+    expect(settings.tg_bot_token).toBe('123456:ABC-DEF');
+    expect(settings.tg_chat_id).toBe('42');
+    expect(settings.tg_notify_online).toBe(true);
+    // Default for offline alerts survives the partial update.
+    expect(settings.tg_notify_offline).toBe(true);
+  });
+
+  it('POST /api/admin/notify/test requires auth', async () => {
+    const res = await api('/api/admin/notify/test', { method: 'POST' });
+    expect(res.status).toBe(401);
+  });
+
+  it('POST /api/admin/notify/test rejects an unconfigured bot', async () => {
+    const cookie = await adminCookie();
+    const res = await api('/api/admin/notify/test', jsonInit({}, cookie));
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toBe('bad_request');
+  });
+
+  it('POST /api/admin/notify/test reports Telegram API errors as 502', async () => {
+    const cookie = await adminCookie();
+    await putSettings(cookie, { tg_bot_token: '123456:ABC', tg_chat_id: '42' });
+    stubTelegramFetch(() => ({ status: 400, body: '{"ok":false,"description":"Bad Request: chat not found"}' }));
+    const res = await api('/api/admin/notify/test', jsonInit({}, cookie));
+    expect(res.status).toBe(502);
+    expect(((await res.json()) as { error: string }).error).toBe('telegram_error');
+  });
+
+  it('POST /api/admin/notify/test delivers a message when configured', async () => {
+    const cookie = await adminCookie();
+    await putSettings(cookie, { tg_bot_token: '123456:ABC', tg_chat_id: '42' });
+    const fetchMock = stubTelegramFetch(() => ({ status: 200, body: '{"ok":true}' }));
+    const res = await api('/api/admin/notify/test', jsonInit({}, cookie));
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { sent: boolean }).sent).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url] = fetchMock.mock.calls[0] as [string];
+    expect(url).toBe('https://api.telegram.org/bot123456:ABC/sendMessage');
+  });
+
+  it('sends exactly one offline and one recovery message per outage', async () => {
+    const cookie = await adminCookie();
+    await putSettings(cookie, { tg_bot_token: '123456:ABC', tg_chat_id: '42', tg_notify_online: true });
+    const { node, token } = await createNode(cookie, 'tg-node');
+    await api('/api/v1/report', reportInit(token, { metrics: sample() }));
+
+    const bodies: string[] = [];
+    stubTelegramFetch((body) => {
+      bodies.push(body);
+      return { status: 200, body: '{"ok":true}' };
+    });
+
+    // Simulate the node going silent past `offline_after`.
+    await setLastSeen(node.id, nowSec() - 3600);
+
+    const first = await runNotifyScan(env);
+    expect(first.offline_sent).toBe(1);
+    expect(first.online_sent).toBe(0);
+    expect(first.send_failures).toBe(0);
+    expect(bodies).toHaveLength(1);
+    expect(bodies[0]).toContain('tg-node');
+
+    // The outage has been reported: a second scan must stay quiet.
+    const second = await runNotifyScan(env);
+    expect(second.offline_sent).toBe(0);
+    expect(bodies).toHaveLength(1);
+    expect(await flagOf(node.id)).toBe(1);
+
+    // The node reports again → exactly one recovery message, flag cleared.
+    await api('/api/v1/report', reportInit(token, { metrics: sample() }));
+    const third = await runNotifyScan(env);
+    expect(third.online_sent).toBe(1);
+    expect(third.offline_sent).toBe(0);
+    expect(bodies).toHaveLength(2);
+    expect(await flagOf(node.id)).toBe(0);
+  });
+
+  it('resets the notified flag on recovery even when recovery messages are off', async () => {
+    const cookie = await adminCookie();
+    // `tg_notify_online` stays false — recovery happens silently.
+    await putSettings(cookie, { tg_bot_token: '123456:ABC', tg_chat_id: '42' });
+    const { node, token } = await createNode(cookie, 'tg-quiet');
+    await api('/api/v1/report', reportInit(token, { metrics: sample() }));
+    stubTelegramFetch(() => ({ status: 200, body: '{"ok":true}' }));
+
+    await setLastSeen(node.id, nowSec() - 3600);
+    expect((await runNotifyScan(env)).offline_sent).toBe(1);
+    expect(await flagOf(node.id)).toBe(1);
+
+    await api('/api/v1/report', reportInit(token, { metrics: sample() }));
+    const recovery = await runNotifyScan(env);
+    expect(recovery.online_sent).toBe(0);
+    expect(await flagOf(node.id)).toBe(0);
+
+    // The next outage must alert again instead of being suppressed by the
+    // stale flag.
+    await setLastSeen(node.id, nowSec() - 3600);
+    expect((await runNotifyScan(env)).offline_sent).toBe(1);
+  });
+
+  it('retries on the next tick when Telegram fails', async () => {
+    const cookie = await adminCookie();
+    await putSettings(cookie, { tg_bot_token: '123456:ABC', tg_chat_id: '42' });
+    const { node, token } = await createNode(cookie, 'tg-retry');
+    await api('/api/v1/report', reportInit(token, { metrics: sample() }));
+    await setLastSeen(node.id, nowSec() - 3600);
+
+    // First tick fails, second succeeds — the alert must not be lost.
+    let calls = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('boom', { status: calls++ === 0 ? 500 : 200 })),
+    );
+
+    const failed = await runNotifyScan(env);
+    expect(failed.send_failures).toBe(1);
+    expect(failed.offline_sent).toBe(0);
+    // The flag was not consumed, so the alert is still pending.
+    expect(await flagOf(node.id)).toBe(0);
+
+    const retried = await runNotifyScan(env);
+    expect(retried.offline_sent).toBe(1);
+    expect(await flagOf(node.id)).toBe(1);
+  });
+
+  it('stays silent for a node that has never reported', async () => {
+    const cookie = await adminCookie();
+    await putSettings(cookie, { tg_bot_token: '123456:ABC', tg_chat_id: '42' });
+    const { node } = await createNode(cookie, 'tg-never');
+    const fetchMock = stubTelegramFetch(() => ({ status: 200, body: '{"ok":true}' }));
+    const counts = await runNotifyScan(env);
+    expect(counts.offline_sent).toBe(0);
+    expect(counts.online_sent).toBe(0);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(await flagOf(node.id)).toBe(0);
   });
 });
 

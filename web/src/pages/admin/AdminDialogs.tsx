@@ -1,8 +1,12 @@
-import { useState, type ReactNode } from 'react';
+import { useState, type FormEvent, type ReactNode } from 'react';
+import { useMutation } from '@tanstack/react-query';
 import { Button, IconButton } from '../../components/Button';
+import { Input } from '../../components/Input';
+import { FormError } from '../../components/Notice';
 import { Modal } from '../../components/Modal';
 import { useToast } from '../../components/Toast';
 import { copyText } from '../../lib/clipboard';
+import { authApi, errorMessage } from '../../lib/api';
 import { useI18n } from '../../lib/i18n';
 import { buildInstallCommand } from '../../lib/install';
 
@@ -118,6 +122,103 @@ export function TokenDialog({
 
         <p className="text-[11px] leading-relaxed text-muted">{t('admin.nodes.installHint')}</p>
       </div>
+    </Modal>
+  );
+}
+
+export interface ChangePasswordDialogProps {
+  open: boolean;
+  onClose: () => void;
+}
+
+/**
+ * Change the signed-in account's password (`POST /api/auth/password`).
+ * The worker verifies the current password; sessions stay valid afterwards.
+ */
+export function ChangePasswordDialog({ open, onClose }: ChangePasswordDialogProps): ReactNode {
+  const { t } = useI18n();
+  const toast = useToast();
+  const [oldPassword, setOldPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [error, setError] = useState<string | null>(null);
+
+  const close = () => {
+    setOldPassword('');
+    setNewPassword('');
+    setConfirmPassword('');
+    setError(null);
+    onClose();
+  };
+
+  const mutation = useMutation({
+    mutationFn: () => authApi.changePassword(oldPassword, newPassword),
+    onSuccess: () => {
+      toast.success(t('admin.password.changed'));
+      close();
+    },
+    onError: (cause: unknown) => setError(errorMessage(cause)),
+  });
+
+  const onSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (oldPassword === '' || newPassword === '') {
+      setError(t('common.required'));
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setError(t('admin.password.confirmMismatch'));
+      return;
+    }
+    setError(null);
+    mutation.mutate();
+  };
+
+  return (
+    <Modal
+      open={open}
+      title={t('admin.password.title')}
+      onClose={close}
+      size="sm"
+      footer={
+        <>
+          <Button variant="ghost" onClick={close} disabled={mutation.isPending}>
+            {t('common.cancel')}
+          </Button>
+          <Button type="submit" form="password-form" variant="primary" loading={mutation.isPending}>
+            {t('common.save')}
+          </Button>
+        </>
+      }
+    >
+      <form id="password-form" className="flex flex-col gap-4" onSubmit={onSubmit} noValidate>
+        <Input
+          label={t('admin.password.old')}
+          type="password"
+          autoComplete="current-password"
+          value={oldPassword}
+          onChange={(event) => setOldPassword(event.target.value)}
+          required
+          autoFocus
+        />
+        <Input
+          label={t('admin.password.new')}
+          type="password"
+          autoComplete="new-password"
+          value={newPassword}
+          onChange={(event) => setNewPassword(event.target.value)}
+          required
+        />
+        <Input
+          label={t('admin.password.confirm')}
+          type="password"
+          autoComplete="new-password"
+          value={confirmPassword}
+          onChange={(event) => setConfirmPassword(event.target.value)}
+          required
+        />
+        {error !== null && error.length > 0 ? <FormError message={error} /> : null}
+      </form>
     </Modal>
   );
 }

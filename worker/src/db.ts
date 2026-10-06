@@ -9,6 +9,7 @@ import {
   type MetricSample,
   type MetricSeries,
   type NodeDetail,
+  type NodeHostInfo,
   type NodeSummary,
   type PingSeriesPoint,
   type PingTaskSummary,
@@ -47,6 +48,14 @@ export interface NodeRow {
   latest: string | null;
   /** Source address of the last report; `''` until the node first checks in. */
   ip: string;
+  /** Notifier send-state: 1 = an offline alert went out, recovery not yet sent. */
+  notified_offline: number;
+  /** JSON NodeHostInfo | NULL — CPU model / core count from the agent. */
+  host_info: string | null;
+  /** Operator-set plan metadata (§2): display text, GB quota, ISO date. */
+  price: string;
+  traffic_gb: number;
+  expires_at: string;
 }
 
 export interface PingTaskRow {
@@ -128,6 +137,10 @@ export const SETTINGS_KEYS: SettingsKey[] = [
   'theme',
   'custom_head',
   'allow_auto_register',
+  'tg_bot_token',
+  'tg_chat_id',
+  'tg_notify_offline',
+  'tg_notify_online',
 ];
 
 /**
@@ -149,7 +162,13 @@ export async function getSettings(db: D1Database): Promise<Settings> {
         out[key] = clampInt(raw, 0, 100000, SETTINGS_DEFAULTS[key]);
         break;
       case 'allow_auto_register':
+      case 'tg_notify_offline':
+      case 'tg_notify_online':
         out[key] = bool(raw, SETTINGS_DEFAULTS[key]);
+        break;
+      case 'tg_bot_token':
+      case 'tg_chat_id':
+        out[key] = str(raw, SETTINGS_DEFAULTS[key]).trim();
         break;
       case 'theme': {
         const t = str(raw, SETTINGS_DEFAULTS.theme);
@@ -183,6 +202,14 @@ export async function putSettings(
       case 'allow_auto_register':
         encoded = bool(value, SETTINGS_DEFAULTS[key]) ? 'true' : 'false';
         break;
+      case 'tg_notify_offline':
+      case 'tg_notify_online':
+        encoded = bool(value, SETTINGS_DEFAULTS[key]) ? 'true' : 'false';
+        break;
+      case 'tg_bot_token':
+      case 'tg_chat_id':
+        encoded = str(value, SETTINGS_DEFAULTS[key]).trim();
+        break;
       case 'theme': {
         const t = str(value, SETTINGS_DEFAULTS.theme);
         encoded = t === 'light' || t === 'dark' || t === 'auto' ? t : SETTINGS_DEFAULTS.theme;
@@ -208,8 +235,7 @@ export function percent(used: number, total: number): number {
 }
 
 /** Coerce an arbitrary object into a full MetricSample (missing → 0). */
-export function coerceSample(input: Record<string, unknown>): MetricSample {
-  return {
+export function coerceSample(input: Record<string, unknown>): MetricSample {  return {
     cpu: num(input.cpu),
     mem_used: Math.trunc(num(input.mem_used)),
     mem_total: Math.trunc(num(input.mem_total)),
@@ -254,6 +280,39 @@ function sampleFromRow(row: MetricRow): MetricSample {
   };
 }
 
+/**
+ * Normalise a stored `host_info` JSON blob. Anything malformed, empty or of
+ * the wrong shape becomes `null` so the SPA can treat the field as absent.
+ */
+export function coerceHostInfo(input: unknown): NodeHostInfo | null {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return null;
+  const raw = input as Record<string, unknown>;
+  const model = str(raw.cpu_model).trim().slice(0, 160);
+  const cores = Math.trunc(num(raw.cpu_cores));
+  if (model === '' || cores <= 0) return null;
+  return { cpu_model: model, cpu_cores: Math.min(4096, cores) };
+}
+
+/** Plan price: trimmed display text, bounded so a row cannot grow unbounded. */
+export function coercePrice(value: unknown): string {
+  return str(value).trim().slice(0, 60);
+}
+
+/**
+ * Expiry date: accepts 'YYYY-MM-DD' (also the JS `Date.toISOString` prefix
+ * form) or '' to clear. Anything else becomes '' — this field is display
+ * metadata, so a typo must not 400 a bulk PATCH.
+ */
+export function coerceExpiresAt(value: unknown): string {
+  const raw = str(value).trim();
+  if (raw === '') return '';
+  const m = /^(\d{4}-\d{2}-\d{2})/.exec(raw);
+  if (m === null) return '';
+  const parsed = new Date(`${m[1]}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return '';
+  return m[1];
+}
+
 /** `online` is always derived from `last_seen` — it is never stored (§7). */
 export function isOnline(row: Pick<NodeRow, 'last_seen'>, offlineAfter: number, now: number): boolean {
   return num(row.last_seen) > 0 && num(row.last_seen) >= now - offlineAfter;
@@ -275,6 +334,10 @@ export function mapNodeSummary(row: NodeRow, offlineAfter: number, now: number):
     uptime: sample ? sample.uptime : 0,
     created_at: num(row.created_at),
     metrics: sample,
+    host: coerceHostInfo(parseJsonColumn<unknown>(row.host_info ?? null, null)),
+    price: str(row.price),
+    traffic_gb: Math.trunc(num(row.traffic_gb)),
+    expires_at: str(row.expires_at),
     cpu: sample ? sample.cpu : 0,
     mem_percent: sample ? percent(sample.mem_used, sample.mem_total) : 0,
     disk_percent: sample ? percent(sample.disk_used, sample.disk_total) : 0,
@@ -320,6 +383,9 @@ export interface CreateNodeInput {
   tags?: string[];
   hidden?: boolean;
   sortOrder?: number;
+  price?: string;
+  trafficGb?: number;
+  expiresAt?: string;
 }
 
 export async function createNode(db: D1Database, input: CreateNodeInput): Promise<NodeRow> {
@@ -329,8 +395,8 @@ export async function createNode(db: D1Database, input: CreateNodeInput): Promis
     .prepare(
       `INSERT INTO nodes
          (id, name, token_hash, token_hint, group_name, region, tags, hidden, sort_order,
-          created_at, updated_at, last_seen, latest)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL)`,
+          created_at, updated_at, last_seen, latest, price, traffic_gb, expires_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?)`,
     )
     .bind(
       id,
@@ -344,6 +410,9 @@ export async function createNode(db: D1Database, input: CreateNodeInput): Promis
       input.sortOrder ?? 0,
       ts,
       ts,
+      coercePrice(input.price ?? ''),
+      clampInt(input.trafficGb ?? 0, 0, 1_000_000, 0),
+      coerceExpiresAt(input.expiresAt ?? ''),
     )
     .run();
   const row = await getNode(db, id);
@@ -382,6 +451,18 @@ export async function updateNode(
   if ('sort_order' in patch) {
     sets.push('sort_order = ?');
     binds.push(Math.trunc(num(patch.sort_order)));
+  }
+  if ('price' in patch) {
+    sets.push('price = ?');
+    binds.push(coercePrice(patch.price));
+  }
+  if ('traffic_gb' in patch) {
+    sets.push('traffic_gb = ?');
+    binds.push(clampInt(patch.traffic_gb, 0, 1_000_000, 0));
+  }
+  if ('expires_at' in patch) {
+    sets.push('expires_at = ?');
+    binds.push(coerceExpiresAt(patch.expires_at));
   }
   if (sets.length === 0) return getNode(db, id);
   sets.push('updated_at = ?');

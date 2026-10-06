@@ -11,6 +11,7 @@ import { authApi, errorMessage, qk } from '../../lib/api';
 import { useI18n, type TranslationKey } from '../../lib/i18n';
 import { useStatusLive } from '../../lib/useLive';
 import type { User } from '../../lib/types';
+import { ChangePasswordDialog } from './AdminDialogs';
 
 interface AdminAuthValue {
   user: User;
@@ -101,6 +102,7 @@ export default function AdminLayout(): ReactNode {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [pwOpen, setPwOpen] = useState(false);
 
   const { data: status } = useStatusLive();
   const siteName = status?.site_name !== undefined && status.site_name.length > 0 ? status.site_name : t('app.name');
@@ -175,6 +177,14 @@ export default function AdminLayout(): ReactNode {
                 size="pill"
                 variant="pill-surface"
                 block
+                onClick={() => setPwOpen(true)}
+              >
+                {t('admin.password.change')}
+              </Button>
+              <Button
+                size="pill"
+                variant="pill-surface"
+                block
                 onClick={() => logout.mutate()}
                 loading={logout.isPending}
               >
@@ -207,14 +217,19 @@ export default function AdminLayout(): ReactNode {
                 <Link to="/" className="text-xs text-muted transition-colors duration-150 hover:text-text">
                   {t('admin.backToSite')}
                 </Link>
-                <Button
-                  size="pill"
-                  variant="pill-surface"
-                  onClick={() => logout.mutate()}
-                  loading={logout.isPending}
-                >
-                  {t('nav.logout')}
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button size="pill" variant="pill-surface" onClick={() => setPwOpen(true)}>
+                    {t('admin.password.change')}
+                  </Button>
+                  <Button
+                    size="pill"
+                    variant="pill-surface"
+                    onClick={() => logout.mutate()}
+                    loading={logout.isPending}
+                  >
+                    {t('nav.logout')}
+                  </Button>
+                </div>
               </div>
             </div>
           ) : null}
@@ -226,6 +241,8 @@ export default function AdminLayout(): ReactNode {
           <AppFooter siteName={siteName} tagline={t('admin.title')} />
         </div>
       </div>
+
+      <ChangePasswordDialog open={pwOpen} onClose={() => setPwOpen(false)} />
     </AdminAuthContext.Provider>
   );
 }

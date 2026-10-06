@@ -4,6 +4,7 @@
 import { Hono } from 'hono';
 import { clientIp, readAgentToken } from '../auth';
 import {
+  coerceHostInfo,
   coerceSample,
   createNode,
   createPingTask,
@@ -141,9 +142,15 @@ agentRoutes.post('/report', async (c) => {
   // cannot regress the dashboard.
   const lastSeen = num(node.last_seen);
   if (ts >= lastSeen) {
+    // Static hardware identity rides in the same `host` envelope; a report
+    // without it keeps whatever was stored before (COALESCE).
+    const hostInfo = coerceHostInfo(host);
+    const hostInfoJson = hostInfo !== null ? JSON.stringify(hostInfo) : null;
     await db
-      .prepare('UPDATE nodes SET latest = ?, last_seen = ?, updated_at = ? WHERE id = ?')
-      .bind(JSON.stringify(sample), ts, now, node.id)
+      .prepare(
+        'UPDATE nodes SET latest = ?, last_seen = ?, updated_at = ?, host_info = COALESCE(?, host_info) WHERE id = ?',
+      )
+      .bind(JSON.stringify(sample), ts, now, hostInfoJson, node.id)
       .run();
 
     // `host` is captured once: fill region/tags only while they are still empty.
