@@ -1,12 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
 import { Link, Navigate, NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { AppFooter } from '../../components/AppFooter';
+import { Brand } from '../../components/Brand';
 import { Button, IconButton } from '../../components/Button';
+import { LangToggle, ThemeToggle } from '../../components/HeaderPills';
 import { Spinner } from '../../components/Spinner';
 import { useToast } from '../../components/Toast';
 import { authApi, errorMessage, qk } from '../../lib/api';
 import { useI18n, type TranslationKey } from '../../lib/i18n';
-import { useTheme } from '../../lib/theme';
+import { useStatusLive } from '../../lib/useLive';
 import type { User } from '../../lib/types';
 
 interface AdminAuthValue {
@@ -80,21 +83,16 @@ function SidebarNav({ onNavigate }: { onNavigate?: () => void }): ReactNode {
   );
 }
 
-function ThemeAndLang(): ReactNode {
-  const { mode, cycle } = useTheme();
-  const { lang, toggleLang, t } = useI18n();
-  const modeLabel = t(mode === 'auto' ? 'theme.auto' : mode === 'light' ? 'theme.light' : 'theme.dark');
-  return (
-    <div className="flex items-center gap-2">
-      <Button size="sm" variant="ghost" onClick={cycle} aria-label={`${t('nav.toggleTheme')} — ${modeLabel}`}>
-        {modeLabel}
-      </Button>
-      <Button size="sm" variant="ghost" onClick={toggleLang} aria-label={t('nav.switchLanguage')}>
-        {lang === 'zh-CN' ? '中文' : 'EN'}
-      </Button>
-    </div>
-  );
-}
+const MENU_ICON = (open: boolean): ReactNode => (
+  <svg viewBox="0 0 20 20" className="size-4" fill="none" aria-hidden="true">
+    <path
+      d={open ? 'M5 5l10 10M15 5 5 15' : 'M3 6h14M3 10h14M3 14h14'}
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+    />
+  </svg>
+);
 
 /** Admin shell: auth guard + sidebar + content column. */
 export default function AdminLayout(): ReactNode {
@@ -103,6 +101,9 @@ export default function AdminLayout(): ReactNode {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [menuOpen, setMenuOpen] = useState(false);
+
+  const { data: status } = useStatusLive();
+  const siteName = status?.site_name !== undefined && status.site_name.length > 0 ? status.site_name : t('app.name');
 
   const meQuery = useQuery({
     queryKey: qk.me,
@@ -148,55 +149,12 @@ export default function AdminLayout(): ReactNode {
   return (
     <AdminAuthContext.Provider value={authValue}>
       <div className="flex min-h-dvh flex-col bg-bg lg:flex-row">
-        {/* mobile top bar */}
-        <header className="flex items-center justify-between gap-3 border-b border-border bg-surface px-4 py-3 lg:hidden">
-          <Link to="/admin/overview" className="flex items-center gap-2 text-sm font-semibold text-text">
-            {t('admin.title')}
-          </Link>
-          <IconButton label={menuOpen ? t('nav.close') : t('nav.menu')} onClick={() => setMenuOpen((open) => !open)}>
-            <svg viewBox="0 0 20 20" className="size-4" fill="none" aria-hidden="true">
-              <path
-                d={menuOpen ? 'M5 5l10 10M15 5 5 15' : 'M3 6h14M3 10h14M3 14h14'}
-                stroke="currentColor"
-                strokeWidth="1.6"
-                strokeLinecap="round"
-              />
-            </svg>
-          </IconButton>
-        </header>
-
-        {menuOpen ? (
-          <div className="border-b border-border bg-surface px-4 py-3 lg:hidden">
-            <SidebarNav onNavigate={() => setMenuOpen(false)} />
-            <div className="mt-3 flex items-center justify-between border-t border-border pt-3">
-              <ThemeAndLang />
-              <Button size="sm" variant="ghost" onClick={() => logout.mutate()} loading={logout.isPending}>
-                {t('nav.logout')}
-              </Button>
-            </div>
-          </div>
-        ) : null}
-
         {/* desktop sidebar */}
         <aside className="hidden w-60 shrink-0 flex-col justify-between border-r border-border bg-surface px-3 py-5 lg:flex">
           <div className="flex flex-col gap-5">
-            <Link to="/" className="flex items-center gap-2.5 px-2 text-sm font-semibold text-text">
-              <span
-                className="flex size-7 items-center justify-center rounded-lg bg-accent/12 text-accent"
-                aria-hidden="true"
-              >
-                <svg viewBox="0 0 24 24" className="size-4" fill="none">
-                  <path
-                    d="M5 8.2 8.4 4h7.2L19 8.2V19a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V8.2Z"
-                    stroke="currentColor"
-                    strokeWidth="1.8"
-                    strokeLinejoin="round"
-                  />
-                  <path d="M5 12h14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-                </svg>
-              </span>
-              {t('app.name')}
-            </Link>
+            <div className="px-2">
+              <Brand name={siteName} to="/" size="sm" />
+            </div>
             <SidebarNav />
           </div>
 
@@ -205,14 +163,17 @@ export default function AdminLayout(): ReactNode {
               <span className="text-[11px] text-muted">{t('admin.signedInAs', { name: authValue.user.username })}</span>
               <span className="text-[11px] text-muted/80">{authValue.user.role}</span>
             </div>
-            <ThemeAndLang />
+            <div className="flex items-center gap-2">
+              <ThemeToggle onSurface />
+              <LangToggle onSurface />
+            </div>
             <div className="flex flex-col gap-1.5">
               <Link to="/" className="px-2 text-xs text-muted transition-colors duration-150 hover:text-text">
                 {t('admin.backToSite')}
               </Link>
               <Button
-                size="sm"
-                variant="ghost"
+                size="pill"
+                variant="pill-surface"
                 block
                 onClick={() => logout.mutate()}
                 loading={logout.isPending}
@@ -223,9 +184,47 @@ export default function AdminLayout(): ReactNode {
           </div>
         </aside>
 
-        <main className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8">
-          <Outlet />
-        </main>
+        <div className="flex min-w-0 flex-1 flex-col">
+          {/* mobile top bar — same chrome as the public header */}
+          <header className="sticky top-0 z-40 flex h-14 items-center justify-between gap-3 border-b border-border bg-bg/85 px-4 backdrop-blur-md lg:hidden">
+            <Brand name={siteName} to="/admin/overview" />
+            <div className="flex shrink-0 items-center gap-2">
+              <ThemeToggle />
+              <LangToggle />
+              <IconButton
+                label={menuOpen ? t('nav.close') : t('nav.menu')}
+                onClick={() => setMenuOpen((open) => !open)}
+              >
+                {MENU_ICON(menuOpen)}
+              </IconButton>
+            </div>
+          </header>
+
+          {menuOpen ? (
+            <div className="border-b border-border bg-surface px-4 py-3 lg:hidden">
+              <SidebarNav onNavigate={() => setMenuOpen(false)} />
+              <div className="mt-3 flex items-center justify-between gap-3 border-t border-border pt-3">
+                <Link to="/" className="text-xs text-muted transition-colors duration-150 hover:text-text">
+                  {t('admin.backToSite')}
+                </Link>
+                <Button
+                  size="pill"
+                  variant="pill-surface"
+                  onClick={() => logout.mutate()}
+                  loading={logout.isPending}
+                >
+                  {t('nav.logout')}
+                </Button>
+              </div>
+            </div>
+          ) : null}
+
+          <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 sm:px-6 sm:py-8">
+            <Outlet />
+          </main>
+
+          <AppFooter siteName={siteName} tagline={t('admin.title')} />
+        </div>
       </div>
     </AdminAuthContext.Provider>
   );

@@ -1,163 +1,496 @@
 import { Link } from 'react-router-dom';
-import type { ReactNode } from 'react';
+import { useId, useMemo, useState, type ReactNode } from 'react';
 import { Badge, StatusDot } from './Badge';
+import { Button } from './Button';
+import { Chart, ChartSkeleton, lineSeries } from './Chart';
+import { Donut } from './Donut';
 import { ProgressBar } from './ProgressBar';
-import { bytes, duration, number, ratioPercent, rate, relativeTime, int } from '../lib/format';
+import { RangeSwitch, type RangeHours } from './RangeSwitch';
+import {
+  IconArrowRight,
+  IconCalendar,
+  IconChart,
+  IconChevronDown,
+  IconChevronUp,
+  IconChipSmall,
+  IconClock,
+  IconCpu,
+  IconDatabase,
+  IconDisk,
+  IconDownload,
+  IconLayers,
+  IconMemory,
+  IconNetworkCard,
+  IconRefresh,
+  IconUpload,
+} from './icons';
+import { bytes, cssVar, duration, number, rate, ratioPercent, relativeTime } from '../lib/format';
 import { useI18n } from '../lib/i18n';
-import { useNow } from '../lib/useLive';
-import type { NodeSummary } from '../lib/types';
+import { useNodeMetrics, useNow } from '../lib/useLive';
+import type { MetricPoint, NodeSummary } from '../lib/types';
+
+/** Inner tile chrome — one level up from the card it sits in. */
+const TILE = 'rounded-xl border border-border/70 bg-surface-2/50';
+
+/**
+ * Sum of *positive* deltas of a cumulative counter, ignoring resets.
+ * `net_in`/`net_out` restart at 0 when the host reboots, so a naive
+ * `last - first` can go negative or wildly overcount.
+ */
+function counterDelta(
+  points: ReadonlyArray<MetricPoint>,
+  pick: (point: MetricPoint) => number,
+  fromTs = 0,
+): number {
+  let sum = 0;
+  let previous: number | null = null;
+  for (const point of points) {
+    const value = pick(point);
+    if (previous !== null && point.ts >= fromTs) sum += Math.max(0, value - previous);
+    previous = value;
+  }
+  return sum;
+}
+
+function MetricTile({
+  icon,
+  label,
+  value,
+  percent,
+  hint,
+}: {
+  icon: ReactNode;
+  label: string;
+  value: string;
+  percent: number;
+  hint?: string;
+}): ReactNode {
+  return (
+    <div className={`flex h-full flex-col justify-center gap-2.5 p-3 ${TILE}`}>
+      <div className="flex items-center gap-2.5">
+        <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-success/12 text-success">
+          {icon}
+        </span>
+        <span className="flex min-w-0 flex-col">
+          <span className="truncate text-[11px] text-muted">{label}</span>
+          <span className="num text-sm font-semibold text-text">{value}</span>
+        </span>
+      </div>
+      {hint !== undefined ? (
+        <span className="num truncate text-[11px] text-muted/85" title={hint}>
+          {hint}
+        </span>
+      ) : null}
+      <ProgressBar value={percent} showValue={false} />
+    </div>
+  );
+}
+
+function RateCell({
+  icon,
+  label,
+  value,
+  hint,
+  tone,
+}: {
+  icon: ReactNode;
+  label: string;
+  value: string;
+  hint?: string;
+  tone: 'success' | 'accent';
+}): ReactNode {
+  const toneClass = tone === 'success' ? 'text-success' : 'text-accent';
+  return (
+    <div className="flex items-center gap-2.5 p-3">
+      <span className={`shrink-0 ${toneClass}`}>{icon}</span>
+      <span className="flex min-w-0 flex-col gap-0.5">
+        <span className="text-[11px] text-muted">{label}</span>
+        <span className="num truncate text-sm font-semibold text-text">{value}</span>
+        {hint !== undefined ? (
+          <span className="num truncate text-[11px] text-muted/85" title={hint}>
+            {hint}
+          </span>
+        ) : null}
+      </span>
+    </div>
+  );
+}
+
+function TrafficCell({
+  icon,
+  label,
+  down,
+  up,
+}: {
+  icon: ReactNode;
+  label: string;
+  down: string;
+  up: string;
+}): ReactNode {
+  return (
+    <div className="flex items-center gap-3 px-5 py-3">
+      <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-surface-2 text-muted">
+        {icon}
+      </span>
+      <div className="flex min-w-0 flex-col gap-1">
+        <span className="truncate text-[11px] text-muted">{label}</span>
+        <div className="flex items-center gap-3 text-xs">
+          <span className="num flex items-center gap-1 text-text">
+            <span className="text-success" aria-hidden="true">
+              ↓
+            </span>
+            {down}
+          </span>
+          <span className="num flex items-center gap-1 text-text">
+            <span className="text-accent" aria-hidden="true">
+              ↑
+            </span>
+            {up}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Legend row for the traffic donut: dot, label, total, share. */
+function LegendRow({
+  color,
+  label,
+  total,
+  share,
+}: {
+  color: string;
+  label: string;
+  total: string;
+  share: string;
+}): ReactNode {
+  return (
+    <div className="flex items-center gap-2 text-[11px]">
+      <span
+        className="size-2 shrink-0 rounded-full"
+        style={{ backgroundColor: color }}
+        aria-hidden="true"
+      />
+      <span className="min-w-0 flex-1 truncate text-muted">{label}</span>
+      <span className="num shrink-0 font-medium text-text">{total}</span>
+      <span className="num w-11 shrink-0 text-right text-muted">{share}</span>
+    </div>
+  );
+}
 
 export interface NodeCardProps {
   node: NodeSummary;
-  /** Rendered in the top-right corner (admin quick actions, etc.). */
-  actions?: ReactNode;
-  /** Reference window used to scale the uptime bar. */
-  uptimeWindowSeconds?: number;
+  /** Cards start open; collapse state is local to the card. */
+  defaultExpanded?: boolean;
 }
 
-/** One node in the dashboard grid: identity, live meters and traffic. */
-export function NodeCard({
-  node,
-  actions,
-  uptimeWindowSeconds = 30 * 86400,
-}: NodeCardProps): ReactNode {
-  const { t } = useI18n();
+/**
+ * One server on the dashboard: identity, live meters, a traffic chart and the
+ * traffic totals, collapsible.
+ *
+ * The per-node history is only requested while the card is open, so a collapsed
+ * node costs no extra round trip.
+ */
+export function NodeCard({ node, defaultExpanded = true }: NodeCardProps): ReactNode {
+  const { t, lang } = useI18n();
   const now = useNow(5_000);
+  const [expanded, setExpanded] = useState(defaultExpanded);
+  const [hours, setHours] = useState<RangeHours>(1);
+  const panelId = useId();
 
   const online = node.online === true;
   const metrics = node.metrics;
-  // Offline nodes (or nodes without a sample) render zeroed bars, never NaN.
+
+  const chartQuery = useNodeMetrics(expanded ? node.id : undefined, hours);
+  const dayQuery = useNodeMetrics(expanded ? node.id : undefined, 24);
+
   const cpu = online && metrics !== null ? metrics.cpu : 0;
   const memPercent = online && metrics !== null ? ratioPercent(metrics.mem_used, metrics.mem_total) : 0;
   const diskPercent =
     online && metrics !== null ? ratioPercent(metrics.disk_used, metrics.disk_total) : 0;
-  const load1 = online && metrics !== null ? metrics.load1 : 0;
-  const uptimeSeconds = online ? (metrics?.uptime ?? node.uptime) : node.uptime;
 
-  const uptimeRatio =
-    uptimeWindowSeconds > 0 ? Math.min(100, (Math.max(0, uptimeSeconds) / uptimeWindowSeconds) * 100) : 0;
+  const netIn = metrics !== null ? metrics.net_in : 0;
+  const netOut = metrics !== null ? metrics.net_out : 0;
+  const netTotal = netIn + netOut;
+  const downShare = netTotal > 0 ? (netIn / netTotal) * 100 : 0;
+  const upShare = netTotal > 0 ? (netOut / netTotal) * 100 : 0;
 
-  const memHint =
-    metrics !== null && metrics.mem_total > 0
-      ? `${bytes(metrics.mem_used, 1)} / ${bytes(metrics.mem_total, 1)}`
-      : t('node.noMetrics');
-  const diskHint =
-    metrics !== null && metrics.disk_total > 0
-      ? `${bytes(metrics.disk_used, 1)} / ${bytes(metrics.disk_total, 1)}`
-      : t('node.noMetrics');
+  const dayPoints = dayQuery.data?.points ?? [];
+  const startOfToday = useMemo(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return Math.floor(d.getTime() / 1000);
+  }, [now]);
 
-  const statusLabel = online ? t('status.online') : t('status.offline');
+  const todayIn = counterDelta(dayPoints, (p) => p.net_in, startOfToday);
+  const todayOut = counterDelta(dayPoints, (p) => p.net_out, startOfToday);
+  const day24In = counterDelta(dayPoints, (p) => p.net_in);
+  const day24Out = counterDelta(dayPoints, (p) => p.net_out);
+
+  const chartOption = useMemo(() => {
+    const points = chartQuery.data?.points ?? [];
+    const toPairs = (pick: (point: MetricPoint) => number): Array<[number, number]> =>
+      points.filter((point) => Number.isFinite(pick(point))).map((point) => [point.ts * 1000, pick(point)]);
+    return {
+      xAxis: {
+        axisLabel: {
+          formatter: (value: number) => {
+            const d = new Date(value);
+            const pad = (n: number) => String(n).padStart(2, '0');
+            return hours > 24
+              ? `${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+              : `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+          },
+        },
+      },
+      yAxis: { axisLabel: { formatter: (value: number) => `${value} B/s` } },
+      tooltip: { valueFormatter: (value: unknown) => rate(Number(value)) },
+      series: [
+        lineSeries(t('node.rx'), toPairs((p) => p.rx_rate), cssVar('--success', '#1cf8ba')),
+        lineSeries(t('node.tx'), toPairs((p) => p.tx_rate), cssVar('--accent', '#0092ff')),
+      ],
+    };
+  }, [chartQuery.data, hours, t]);
+
+  const statusLabel = online ? t('status.short.ok') : t('status.offline');
+  // The agent reports `os` and `arch` as tags; show the OS one.
+  const osTag = node.tags.find((tag) => !/^(x86|arm|aarch|amd|i[3-6]86)/i.test(tag)) ?? '';
 
   return (
-    <article
-      className={`card group relative flex flex-col gap-4 p-5 hover:border-muted/40 ${
-        online ? '' : 'opacity-80'
-      }`}
-    >
-      {/* identity */}
-      <header className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 flex-col gap-1.5">
-          <Link
-            to={`/node/${node.id}`}
-            aria-label={t('node.viewDetails', { name: node.name })}
-            className="flex items-center gap-2 truncate text-[15px] font-semibold text-text transition-colors duration-150 hover:text-accent"
-          >
-            <StatusDot online={online} label={statusLabel} />
-            <span className="truncate">{node.name}</span>
-          </Link>
-          <div className="flex flex-wrap items-center gap-1.5">
-            <Badge tone="accent">{node.group}</Badge>
-            {node.region.length > 0 ? <Badge tone="muted">{node.region}</Badge> : null}
-            {node.hidden ? <Badge tone="warn">{t('common.hidden')}</Badge> : null}
-            {node.tags.slice(0, 2).map((tag) => (
-              <Badge key={tag} tone="neutral">
-                {tag}
-              </Badge>
-            ))}
-            {node.tags.length > 2 ? <Badge tone="neutral">+{node.tags.length - 2}</Badge> : null}
-          </div>
-        </div>
-        {actions !== undefined ? (
-          <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-within:opacity-100">
-            {actions}
-          </div>
-        ) : null}
-      </header>
+    <article className="card overflow-hidden">
+      {/* ── header ── */}
+      <h3 className="flex items-center">
+        <button
+          type="button"
+          onClick={() => setExpanded((open) => !open)}
+          aria-expanded={expanded}
+          aria-controls={panelId}
+          className="flex min-w-0 flex-1 items-center gap-3 px-5 py-3.5 text-left transition-colors duration-150 hover:bg-surface-2/40"
+        >
+          <StatusDot online={online} label={statusLabel} />
+          <span className="truncate text-[15px] font-semibold text-text">{node.name}</span>
+          <Badge tone={online ? 'success' : 'muted'} dot>
+            {statusLabel}
+          </Badge>
+          <span className="ml-auto flex shrink-0 items-center gap-2">
+            <span className="sr-only">{expanded ? t('common.collapse') : t('common.expand')}</span>
+            <span className="flex size-7 items-center justify-center rounded-full border border-border text-muted">
+              {expanded ? <IconChevronUp /> : <IconChevronDown />}
+            </span>
+          </span>
+        </button>
+      </h3>
 
-      {/* meters */}
-      <div className="flex flex-col gap-3">
-        <ProgressBar
-          label={t('node.cpu')}
-          value={cpu}
-          valueText={online ? undefined : t('node.offline')}
-          tone={online ? undefined : 'muted'}
-        />
-        <ProgressBar
-          label={t('node.mem')}
-          value={memPercent}
-          valueText={online ? undefined : t('node.offline')}
-          tone={online ? undefined : 'muted'}
-        />
-        <ProgressBar
-          label={t('node.disk')}
-          value={diskPercent}
-          valueText={online ? undefined : t('node.offline')}
-          tone={online ? undefined : 'muted'}
-        />
+      {/* ── meta strip ── */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-5 pb-3.5 text-[11px] text-muted">
+        <IconRefresh className="size-3.5 text-success" />
+        {node.ip.length > 0 ? (
+          <>
+            <span className="flex items-center gap-1.5">
+              <span>{t('node.ip')}</span>
+              <span className="num text-text/85">{node.ip}</span>
+            </span>
+            <span aria-hidden="true">·</span>
+          </>
+        ) : null}
+        <span className="flex items-center gap-1.5">
+          <span>{t('node.uptime')}</span>
+          <span className="num text-text/85">{online ? duration(node.uptime, 2, lang) : '–'}</span>
+        </span>
+        {osTag.length > 0 ? (
+          <>
+            <span aria-hidden="true">·</span>
+            <span className="flex items-center gap-1.5">
+              <span>{t('node.os')}</span>
+              <span className="text-text/85">{osTag}</span>
+            </span>
+          </>
+        ) : null}
+        <span aria-hidden="true">·</span>
+        <span className="flex items-center gap-1.5">
+          <span>{t('node.lastSeen')}</span>
+          <span className="num text-text/85">{relativeTime(node.last_seen, now, lang)}</span>
+        </span>
       </div>
 
-      {/* figures */}
-      <dl className="grid grid-cols-2 gap-x-4 gap-y-2.5 text-xs sm:grid-cols-4">
-        <div className="flex flex-col gap-0.5">
-          <dt className="text-muted">{t('node.load')}</dt>
-          <dd className="num font-medium text-text">{online ? number(load1, 2) : '–'}</dd>
-        </div>
-        <div className="flex flex-col gap-0.5">
-          <dt className="text-muted">{t('node.uptime')}</dt>
-          <dd className="num font-medium text-text" title={`${int(uptimeSeconds)} s`}>
-            {online ? duration(uptimeSeconds) : '–'}
-          </dd>
-        </div>
-        <div className="flex flex-col gap-0.5">
-          <dt className="text-muted" title={t('node.rxRate')}>
-            ↓ {t('node.rx')}
-          </dt>
-          <dd className="num font-medium text-text">{online ? rate(metrics?.rx_rate) : '–'}</dd>
-        </div>
-        <div className="flex flex-col gap-0.5">
-          <dt className="text-muted" title={t('node.txRate')}>
-            ↑ {t('node.tx')}
-          </dt>
-          <dd className="num font-medium text-text">{online ? rate(metrics?.tx_rate) : '–'}</dd>
-        </div>
-      </dl>
+      {expanded ? (
+        <div id={panelId} className="flex flex-col gap-4 border-t border-border/60 p-5">
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,2.1fr)_minmax(0,1fr)]">
+            {/* ── meters ──
+                Two blocks that stretch to fill the column, so the panel is
+                never shorter than the chart / donut beside it. */}
+            <div className="flex flex-col gap-2.5">
+              <div className="grid flex-1 grid-cols-3 gap-2.5">
+                <MetricTile
+                  icon={<IconCpu className="size-4" />}
+                  label={t('node.cpu')}
+                  value={`${number(cpu, 1)}%`}
+                  percent={cpu}
+                  hint={
+                    metrics !== null
+                      ? `${t('node.load1.short')} ${number(metrics.load1, 2)}`
+                      : undefined
+                  }
+                />
+                <MetricTile
+                  icon={<IconMemory className="size-4" />}
+                  label={t('node.mem')}
+                  value={`${number(memPercent, 1)}%`}
+                  percent={memPercent}
+                  hint={metrics !== null ? bytes(metrics.mem_used) : undefined}
+                />
+                <MetricTile
+                  icon={<IconDisk className="size-4" />}
+                  label={t('node.disk')}
+                  value={`${number(diskPercent, 1)}%`}
+                  percent={diskPercent}
+                  hint={metrics !== null ? bytes(metrics.disk_used) : undefined}
+                />
+              </div>
+              <div className={`grid flex-1 grid-cols-2 divide-x divide-border/70 ${TILE}`}>
+                <RateCell
+                  icon={<IconDownload className="size-5" />}
+                  label={t('node.rx')}
+                  value={rate(metrics?.rx_rate)}
+                  hint={metrics !== null ? `Σ ${bytes(metrics.net_in)}` : undefined}
+                  tone="success"
+                />
+                <RateCell
+                  icon={<IconUpload className="size-5" />}
+                  label={t('node.tx')}
+                  value={rate(metrics?.tx_rate)}
+                  hint={metrics !== null ? `Σ ${bytes(metrics.net_out)}` : undefined}
+                  tone="accent"
+                />
+              </div>
+            </div>
 
-      {/* uptime bar + freshness */}
-      <footer className="flex flex-col gap-1.5">
-        <div
-          className="h-1 w-full overflow-hidden rounded-full bg-surface-2"
-          role="img"
-          aria-label={`${t('node.uptime')}: ${duration(uptimeSeconds)}`}
-          title={`${t('node.uptime')}: ${duration(uptimeSeconds)}`}
-        >
-          <div
-            className={`h-full rounded-full transition-[width] duration-500 ${
-              online ? 'bg-success/70' : 'bg-muted/40'
-            }`}
-            style={{ width: `${uptimeRatio}%` }}
-          />
+            {/* ── traffic chart ── */}
+            <section className={`flex flex-col gap-2 p-3 ${TILE}`}>
+              <header className="flex flex-wrap items-center justify-between gap-2">
+                <span className="flex items-center gap-2">
+                  <IconChart className="size-4 text-success" />
+                  <span className="text-sm font-semibold text-text">
+                    {t('dashboard.trafficStats')}
+                  </span>
+                </span>
+                <RangeSwitch value={hours} onChange={setHours} size="sm" />
+              </header>
+              {chartQuery.isPending ? (
+                <ChartSkeleton height={168} />
+              ) : (
+                <Chart option={chartOption} height={168} ariaLabel={t('dashboard.trafficStats')} />
+              )}
+              <div className="flex items-center gap-4 px-1 text-[11px] text-muted">
+                <span className="flex items-center gap-1.5">
+                  <span className="size-2 rounded-full bg-success" aria-hidden="true" />
+                  {t('node.rx')}
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="size-2 rounded-full bg-accent" aria-hidden="true" />
+                  {t('node.tx')}
+                </span>
+              </div>
+            </section>
+
+            {/* ── split + protocol ── */}
+            <div className="flex flex-col gap-2.5">
+              <section className={`flex items-center gap-3 p-3 ${TILE}`}>
+                <Donut
+                  size={96}
+                  thickness={11}
+                  ariaLabel={`${t('dashboard.upDownRatio')}: ${number(downShare, 1)}% / ${number(upShare, 1)}%`}
+                  slices={[
+                    { label: t('node.rx'), value: netIn, color: cssVar('--success', '#1cf8ba') },
+                    { label: t('node.tx'), value: netOut, color: cssVar('--accent', '#0092ff') },
+                  ]}
+                  centerTop={
+                    <span className="text-[10px] leading-tight text-muted">
+                      {t('dashboard.upDownRatio')}
+                    </span>
+                  }
+                  centerBottom={
+                    netTotal > 0 ? (
+                      <span className="num text-[11px] font-semibold text-text">
+                        {number(downShare, 0)}/{number(upShare, 0)}%
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-muted">{t('common.noData')}</span>
+                    )
+                  }
+                />
+                <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+                  <LegendRow
+                    color={cssVar('--success', '#1cf8ba')}
+                    label={t('node.rx')}
+                    total={bytes(netIn)}
+                    share={`${number(downShare, 1)}%`}
+                  />
+                  <LegendRow
+                    color={cssVar('--accent', '#0092ff')}
+                    label={t('node.tx')}
+                    total={bytes(netOut)}
+                    share={`${number(upShare, 1)}%`}
+                  />
+                </div>
+              </section>
+
+              <section className={`flex flex-col gap-2 p-3 ${TILE}`}>
+                <span className="text-sm font-semibold text-text">
+                  {t('dashboard.protocolShare')}
+                </span>
+                {/* The agent reports connection counts, not per-protocol bytes,
+                    so there is nothing truthful to chart here yet. */}
+                <div className="flex flex-col gap-1.5">
+                  {[
+                    { icon: <IconLayers className="size-4" />, label: t('protocol.tcp') },
+                    { icon: <IconNetworkCard className="size-4" />, label: t('protocol.udp') },
+                    { icon: <IconChipSmall className="size-4" />, label: t('protocol.other') },
+                  ].map((row) => (
+                    <div key={row.label} className="flex items-center gap-2.5 text-[11px]">
+                      <span className="text-muted">{row.icon}</span>
+                      <span className="w-9 shrink-0 text-muted">{row.label}</span>
+                      <span className="h-1.5 flex-1 rounded-full bg-surface-2" aria-hidden="true" />
+                      <span className="num w-10 shrink-0 text-right text-muted">–</span>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-[11px] text-muted/80">{t('common.noData')}</p>
+              </section>
+            </div>
+          </div>
         </div>
-        <div className="flex items-center justify-between gap-2 text-[11px] text-muted">
-          <span className="truncate" title={`${t('node.lastSeen')}: ${relativeTime(node.last_seen, now)}`}>
-            {t('node.lastSeen')} {relativeTime(node.last_seen, now)}
-          </span>
-          {metrics !== null && metrics.mem_total > 0 ? (
-            <span className="num hidden shrink-0 sm:inline" title={`${memHint} · ${diskHint}`}>
-              {bytes(metrics.mem_used, 0)}/{bytes(metrics.mem_total, 0)}
-            </span>
-          ) : null}
+      ) : null}
+
+      {/* ── totals ── */}
+      <div className="grid grid-cols-1 divide-y divide-border/60 border-t border-border/60 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto] sm:divide-x sm:divide-y-0">
+        <TrafficCell
+          icon={<IconCalendar className="size-4" />}
+          label={t('dashboard.todayTraffic')}
+          down={bytes(todayIn)}
+          up={bytes(todayOut)}
+        />
+        <TrafficCell
+          icon={<IconClock className="size-4" />}
+          label={t('dashboard.last24hTraffic')}
+          down={bytes(day24In)}
+          up={bytes(day24Out)}
+        />
+        <TrafficCell
+          icon={<IconDatabase className="size-4" />}
+          label={t('dashboard.totalTraffic')}
+          down={bytes(netIn)}
+          up={bytes(netOut)}
+        />
+        <div className="flex items-center justify-end px-5 py-3">
+          <Link to={`/node/${node.id}`}>
+            <Button size="pill" variant="pill" icon={<IconArrowRight className="size-3.5" />}>
+              {t('common.viewDetails')}
+            </Button>
+          </Link>
         </div>
-      </footer>
+      </div>
     </article>
   );
 }
@@ -166,33 +499,24 @@ export function NodeCard({
 export function NodeCardSkeleton(): ReactNode {
   return (
     <div className="card flex flex-col gap-4 p-5">
-      <div className="flex flex-col gap-2">
+      <div className="flex items-center gap-3">
+        <div className="skeleton size-2.5 rounded-full" />
         <div className="skeleton h-4 w-32" />
-        <div className="flex gap-1.5">
-          <div className="skeleton h-4 w-16" />
-          <div className="skeleton h-4 w-10" />
+        <div className="skeleton h-4 w-16" />
+      </div>
+      <div className="skeleton h-3 w-64" />
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,2.1fr)_minmax(0,1fr)]">
+        <div className="flex flex-col gap-2.5">
+          <div className="grid flex-1 grid-cols-3 gap-2.5">
+            {[0, 1, 2].map((index) => (
+              <div key={index} className="skeleton h-full min-h-24" />
+            ))}
+          </div>
+          <div className="skeleton min-h-20 flex-1" />
         </div>
+        <div className="skeleton h-52" />
+        <div className="skeleton h-52" />
       </div>
-      <div className="flex flex-col gap-3">
-        {[0, 1, 2].map((index) => (
-          <div key={index} className="flex flex-col gap-1.5">
-            <div className="flex justify-between">
-              <div className="skeleton h-3 w-10" />
-              <div className="skeleton h-3 w-8" />
-            </div>
-            <div className="skeleton h-1.5 w-full" />
-          </div>
-        ))}
-      </div>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {[0, 1, 2, 3].map((index) => (
-          <div key={index} className="flex flex-col gap-1">
-            <div className="skeleton h-3 w-10" />
-            <div className="skeleton h-3.5 w-14" />
-          </div>
-        ))}
-      </div>
-      <div className="skeleton h-1 w-full" />
     </div>
   );
 }

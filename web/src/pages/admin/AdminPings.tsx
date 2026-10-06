@@ -5,6 +5,7 @@ import { Button, IconButton } from '../../components/Button';
 import { Checkbox, Input } from '../../components/Input';
 import { EmptyState } from '../../components/EmptyState';
 import { Modal } from '../../components/Modal';
+import { FormError } from '../../components/Notice';
 import { ErrorBanner, PageHeader } from '../../components/PageHeader';
 import { Select } from '../../components/Select';
 import { Table, type Column } from '../../components/Table';
@@ -42,7 +43,7 @@ const TYPE_OPTIONS: ReadonlyArray<{ value: PingType; label: string }> = [
 
 /** `/admin/pings` — probe task CRUD with a node filter. */
 export default function AdminPings(): ReactNode {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const { canEdit } = useAdminAuth();
   const toast = useToast();
   const queryClient = useQueryClient();
@@ -216,24 +217,32 @@ export default function AdminPings(): ReactNode {
         header: t('admin.pings.interval'),
         align: 'right',
         hideOnMobile: true,
-        render: (ping) => <span className="num text-muted">{duration(ping.interval)}</span>,
+        render: (ping) => <span className="num text-muted">{duration(ping.interval, 2, lang)}</span>,
       },
       {
         key: 'enabled',
         header: t('common.status'),
-        render: (ping) => (
-          <button
-            type="button"
-            onClick={() => toggleMutation.mutate({ id: ping.id, enabled: !ping.enabled })}
-            disabled={toggleMutation.isPending}
-            aria-pressed={ping.enabled}
-            className="rounded-full transition-opacity duration-150 hover:opacity-80 disabled:opacity-60"
-          >
+        render: (ping) => {
+          const badge = (
             <Badge tone={ping.enabled ? 'success' : 'muted'} dot>
               {ping.enabled ? t('ping.enabled') : t('ping.disabled')}
             </Badge>
-          </button>
-        ),
+          );
+          // A viewer cannot PATCH, so show the state as plain text rather than
+          // as a control the request would reject.
+          if (!canEdit) return badge;
+          return (
+            <button
+              type="button"
+              onClick={() => toggleMutation.mutate({ id: ping.id, enabled: !ping.enabled })}
+              disabled={toggleMutation.isPending}
+              aria-pressed={ping.enabled}
+              className="rounded-full transition-opacity duration-150 hover:opacity-80 disabled:opacity-60"
+            >
+              {badge}
+            </button>
+          );
+        },
       },
       {
         key: 'actions',
@@ -267,7 +276,7 @@ export default function AdminPings(): ReactNode {
           ) : null,
       },
     ],
-    [t, nodeName, canEdit, toggleMutation, deleteMutation],
+    [t, lang, nodeName, canEdit, toggleMutation, deleteMutation],
   );
 
   const pending = createMutation.isPending || updateMutation.isPending;
@@ -388,11 +397,7 @@ export default function AdminPings(): ReactNode {
             checked={form.enabled}
             onChange={(event) => setForm((current) => ({ ...current, enabled: event.target.checked }))}
           />
-          {formError !== null ? (
-            <p role="alert" className="rounded-xl border border-danger/30 bg-danger/8 px-3 py-2 text-xs text-danger">
-              {formError}
-            </p>
-          ) : null}
+          {formError !== null ? <FormError message={formError} /> : null}
         </form>
       </Modal>
 

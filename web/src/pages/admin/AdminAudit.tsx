@@ -25,7 +25,7 @@ function actionTone(action: string): 'success' | 'danger' | 'accent' | 'warn' | 
 
 /** `/admin/audit` — recent audit rows from `GET /api/admin/audit?limit=`. */
 export default function AdminAudit(): ReactNode {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const now = useNow(10_000);
   const [limit, setLimit] = useState<number>(100);
 
@@ -46,7 +46,7 @@ export default function AdminAudit(): ReactNode {
         render: (row) => (
           <div className="flex flex-col gap-0.5">
             <span className="num whitespace-nowrap text-text">{dateTime(row.ts)}</span>
-            <span className="text-[11px] text-muted">{relativeTime(row.ts, now)}</span>
+            <span className="text-[11px] text-muted">{relativeTime(row.ts, now, lang)}</span>
           </div>
         ),
       },
@@ -90,7 +90,7 @@ export default function AdminAudit(): ReactNode {
         render: (row) => <span className="num text-[11px] text-muted">{row.ip.length > 0 ? row.ip : '–'}</span>,
       },
     ],
-    [t, now],
+    [t, lang, now],
   );
 
   return (
@@ -99,7 +99,7 @@ export default function AdminAudit(): ReactNode {
         title={t('admin.audit.title')}
         subtitle={t('admin.audit.subtitle')}
         actions={
-          <div className="w-40">
+          <div className="w-48">
             <Select
               aria-label={t('admin.audit.limit', { count: limit })}
               value={String(limit)}

@@ -5,6 +5,7 @@ import { Button, IconButton } from '../../components/Button';
 import { Checkbox, Input } from '../../components/Input';
 import { EmptyState } from '../../components/EmptyState';
 import { Modal } from '../../components/Modal';
+import { FormError } from '../../components/Notice';
 import { ErrorBanner, PageHeader } from '../../components/PageHeader';
 import { Table, type Column } from '../../components/Table';
 import { useToast } from '../../components/Toast';
@@ -54,7 +55,7 @@ function toForm(node: AdminNode): NodeFormState {
 
 /** `/admin/nodes` — node CRUD, token issuance/rotation, visibility and order. */
 export default function AdminNodes(): ReactNode {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const { canEdit } = useAdminAuth();
   const toast = useToast();
   const queryClient = useQueryClient();
@@ -273,7 +274,7 @@ export default function AdminNodes(): ReactNode {
         render: (node) => (
           <div className="flex flex-col gap-0.5">
             <span className="num text-[11px] text-text">
-              {node.last_seen > 0 ? relativeTime(node.last_seen, now) : t('common.never')}
+              {node.last_seen > 0 ? relativeTime(node.last_seen, now, lang) : t('common.never')}
             </span>
             <span className="text-[11px] text-muted">
               {node.hidden ? t('common.hidden') : t('common.visible')}
@@ -364,7 +365,7 @@ export default function AdminNodes(): ReactNode {
           ) : null,
       },
     ],
-    [t, now, nodes, canEdit, deleteMutation.isPending, rotateMutation.isPending, reorderMutation.isPending, toggleHiddenMutation.isPending, move],
+    [t, lang, now, nodes, canEdit, deleteMutation.isPending, rotateMutation.isPending, reorderMutation.isPending, toggleHiddenMutation.isPending, move],
   );
 
   const pending = createMutation.isPending || updateMutation.isPending;
@@ -473,11 +474,7 @@ export default function AdminNodes(): ReactNode {
             checked={form.hidden}
             onChange={(event) => setForm((current) => ({ ...current, hidden: event.target.checked }))}
           />
-          {formError !== null ? (
-            <p role="alert" className="rounded-xl border border-danger/30 bg-danger/8 px-3 py-2 text-xs text-danger">
-              {formError}
-            </p>
-          ) : null}
+          {formError !== null ? <FormError message={formError} /> : null}
         </form>
       </Modal>
 

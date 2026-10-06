@@ -5,6 +5,7 @@ import { Button, IconButton } from '../../components/Button';
 import { EmptyState } from '../../components/EmptyState';
 import { Input } from '../../components/Input';
 import { Modal } from '../../components/Modal';
+import { FormError } from '../../components/Notice';
 import { ErrorBanner, PageHeader } from '../../components/PageHeader';
 import { Select } from '../../components/Select';
 import { Table, type Column } from '../../components/Table';
@@ -21,7 +22,7 @@ export default function AdminUsers(): ReactNode {
   const { t } = useI18n();
   const toast = useToast();
   const queryClient = useQueryClient();
-  const { user: currentUser } = useAdminAuth();
+  const { user: currentUser, canEdit } = useAdminAuth();
 
   const [formOpen, setFormOpen] = useState(false);
   const [username, setUsername] = useState('');
@@ -102,28 +103,29 @@ export default function AdminUsers(): ReactNode {
         key: 'actions',
         header: t('common.actions'),
         align: 'right',
-        render: (user) => (
-          <IconButton
-            label={t('common.delete')}
-            disabled={user.id === currentUser.id}
-            onClick={() =>
-              setConfirm({
-                title: t('common.delete'),
-                message: t('admin.users.deleteConfirm', { name: user.username }),
-                confirmLabel: t('common.delete'),
-                danger: true,
-                onConfirm: () => deleteMutation.mutate(user.id),
-              })
-            }
-          >
-            <svg viewBox="0 0 16 16" className="size-3.5" fill="none" aria-hidden="true">
-              <path d="M3.5 5h9M6.5 5V3.8a.8.8 0 0 1 .8-.8h1.4a.8.8 0 0 1 .8.8V5M5 5l.6 7.4a.8.8 0 0 0 .8.7h3.2a.8.8 0 0 0 .8-.7L11 5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </IconButton>
-        ),
+        render: (user) =>
+          canEdit ? (
+            <IconButton
+              label={t('common.delete')}
+              disabled={user.id === currentUser.id}
+              onClick={() =>
+                setConfirm({
+                  title: t('common.delete'),
+                  message: t('admin.users.deleteConfirm', { name: user.username }),
+                  confirmLabel: t('common.delete'),
+                  danger: true,
+                  onConfirm: () => deleteMutation.mutate(user.id),
+                })
+              }
+            >
+              <svg viewBox="0 0 16 16" className="size-3.5" fill="none" aria-hidden="true">
+                <path d="M3.5 5h9M6.5 5V3.8a.8.8 0 0 1 .8-.8h1.4a.8.8 0 0 1 .8.8V5M5 5l.6 7.4a.8.8 0 0 0 .8.7h3.2a.8.8 0 0 0 .8-.7L11 5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </IconButton>
+          ) : null,
       },
     ],
-    [t, currentUser.id, deleteMutation],
+    [t, currentUser.id, canEdit, deleteMutation],
   );
 
   return (
@@ -132,23 +134,27 @@ export default function AdminUsers(): ReactNode {
         title={t('admin.users.title')}
         subtitle={t('admin.users.subtitle')}
         actions={
-          <Button
-            variant="primary"
-            onClick={() => {
-              setUsername('');
-              setPassword('');
-              setRole('admin');
-              setFormError(null);
-              setFormOpen(true);
-            }}
-            icon={
-              <svg viewBox="0 0 16 16" className="size-3.5" fill="none" aria-hidden="true">
-                <path d="M8 3.5v9M3.5 8h9" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-              </svg>
-            }
-          >
-            {t('admin.users.add')}
-          </Button>
+          canEdit ? (
+            <Button
+              variant="primary"
+              onClick={() => {
+                setUsername('');
+                setPassword('');
+                setRole('admin');
+                setFormError(null);
+                setFormOpen(true);
+              }}
+              icon={
+                <svg viewBox="0 0 16 16" className="size-3.5" fill="none" aria-hidden="true">
+                  <path d="M8 3.5v9M3.5 8h9" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+                </svg>
+              }
+            >
+              {t('admin.users.add')}
+            </Button>
+          ) : (
+            <Badge tone="muted">{t('admin.readOnly')}</Badge>
+          )
         }
       />
 
@@ -218,11 +224,7 @@ export default function AdminUsers(): ReactNode {
               { value: 'viewer', label: t('admin.users.role.viewer') },
             ]}
           />
-          {formError !== null ? (
-            <p role="alert" className="rounded-xl border border-danger/30 bg-danger/8 px-3 py-2 text-xs text-danger">
-              {formError}
-            </p>
-          ) : null}
+          {formError !== null ? <FormError message={formError} /> : null}
         </form>
       </Modal>
 

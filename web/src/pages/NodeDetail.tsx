@@ -6,10 +6,21 @@ import { Button } from '../components/Button';
 import { Chart, ChartSkeleton, lineSeries } from '../components/Chart';
 import { EmptyState } from '../components/EmptyState';
 import { Gauge } from '../components/Gauge';
+import { Notice } from '../components/Notice';
+import { RangeSwitch, type RangeHours } from '../components/RangeSwitch';
 import { Sparkline } from '../components/Sparkline';
 import { Spinner } from '../components/Spinner';
 import { StatCard } from '../components/StatCard';
 import { Table, type Column } from '../components/Table';
+import {
+  IconActivity,
+  IconClock,
+  IconCpu,
+  IconDatabase,
+  IconDownload,
+  IconMemory,
+  IconUpload,
+} from '../components/icons';
 import { ApiError, errorMessage } from '../lib/api';
 import {
   axisBytes,
@@ -28,26 +39,9 @@ import {
   relativeTime,
   shortDateTime,
 } from '../lib/format';
-import { useI18n, type TranslationKey } from '../lib/i18n';
+import { useI18n } from '../lib/i18n';
 import { useNodeLive, useNodeMetrics, useNodePings, useNow } from '../lib/useLive';
 import type { MetricPoint, NodeDetail as NodeDetailDto, PingTaskWithSeries } from '../lib/types';
-
-const RANGES = [1, 6, 24, 168] as const;
-type RangeHours = (typeof RANGES)[number];
-
-const RANGE_LABEL: Record<RangeHours, TranslationKey> = {
-  1: 'detail.range.1h',
-  6: 'detail.range.6h',
-  24: 'detail.range.24h',
-  168: 'detail.range.7d',
-};
-
-const RANGE_SHORT: Record<RangeHours, TranslationKey> = {
-  1: 'detail.range.1h.short',
-  6: 'detail.range.6h.short',
-  24: 'detail.range.24h.short',
-  168: 'detail.range.7d.short',
-};
 
 function toPairs(points: ReadonlyArray<MetricPoint>, pick: (point: MetricPoint) => number): Array<[number, number]> {
   const out: Array<[number, number]> = [];
@@ -91,43 +85,6 @@ function LegendDot({ color, label }: { color: string; label: string }): ReactNod
       />
       {label}
     </span>
-  );
-}
-
-function RangeSwitch({
-  value,
-  onChange,
-}: {
-  value: RangeHours;
-  onChange: (next: RangeHours) => void;
-}): ReactNode {
-  const { t } = useI18n();
-  return (
-    <div
-      role="group"
-      aria-label={t('detail.rangeLabel')}
-      className="inline-flex items-center gap-0.5 rounded-xl border border-border bg-surface p-0.5"
-    >
-      {RANGES.map((range) => {
-        const active = range === value;
-        return (
-          <button
-            key={range}
-            type="button"
-            onClick={() => onChange(range)}
-            aria-pressed={active}
-            title={t(RANGE_LABEL[range])}
-            className={`num rounded-[10px] px-2.5 py-1 text-xs font-medium transition-colors duration-150 ${
-              active
-                ? 'bg-accent/14 text-accent'
-                : 'text-muted hover:bg-surface-2 hover:text-text'
-            }`}
-          >
-            {t(RANGE_SHORT[range])}
-          </button>
-        );
-      })}
-    </div>
   );
 }
 
@@ -216,8 +173,8 @@ function PingTable({ node }: { node: NodeDetailDto }): ReactNode {
             ariaLabel={`${row.name}: ${ms(row.latest?.value)}`}
             stroke={
               row.latest !== null && !row.latest.ok
-                ? cssVar('--danger', '#ef4444')
-                : cssVar('--accent', '#3b82f6')
+                ? cssVar('--danger', '#f0506e')
+                : cssVar('--accent', '#0092ff')
             }
           />
         ),
@@ -264,7 +221,7 @@ function PingTable({ node }: { node: NodeDetailDto }): ReactNode {
 
 export default function NodeDetail(): ReactNode {
   const { id } = useParams<{ id: string }>();
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const now = useNow(5_000);
   const [hours, setHours] = useState<RangeHours>(1);
 
@@ -282,10 +239,10 @@ export default function NodeDetail(): ReactNode {
     traffic: EChartsOption;
     disk: EChartsOption;
   }>(() => {
-    const accent = cssVar('--accent', '#3b82f6');
-    const success = cssVar('--success', '#22c55e');
-    const warn = cssVar('--warn', '#f59e0b');
-    const danger = cssVar('--danger', '#ef4444');
+    const accent = cssVar('--accent', '#0092ff');
+    const success = cssVar('--success', '#1cf8ba');
+    const warn = cssVar('--warn', '#f5a524');
+    const danger = cssVar('--danger', '#f0506e');
     const axisLabelFormatter =
       hours > 24
         ? (value: number) => shortDateTime(Math.round(value / 1000))
@@ -312,8 +269,8 @@ export default function NodeDetail(): ReactNode {
       legend: { show: true },
       tooltip: { valueFormatter: (value) => rate(Number(value)) },
       series: [
-        lineSeries('↓ RX', toPairs(points, (point) => point.rx_rate), accent),
-        lineSeries('↑ TX', toPairs(points, (point) => point.tx_rate), warn),
+        lineSeries('↓ RX', toPairs(points, (point) => point.rx_rate), success),
+        lineSeries('↑ TX', toPairs(points, (point) => point.tx_rate), accent),
       ],
     };
 
@@ -331,10 +288,10 @@ export default function NodeDetail(): ReactNode {
       legend: { show: true },
       tooltip: { valueFormatter: (value) => bytes(Number(value), 2) },
       series: [
-        lineSeries(t('node.trafficIn'), toPairs(points, (point) => point.net_in), accent, {
+        lineSeries(t('node.trafficIn'), toPairs(points, (point) => point.net_in), success, {
           area: false,
         }),
-        lineSeries(t('node.trafficOut'), toPairs(points, (point) => point.net_out), warn, {
+        lineSeries(t('node.trafficOut'), toPairs(points, (point) => point.net_out), accent, {
           area: false,
           dashed: true,
         }),
@@ -408,7 +365,7 @@ export default function NodeDetail(): ReactNode {
 
   const statusLabel = online ? t('status.online') : t('status.offline');
   // `step` is 1 for raw rows; showing "1s" is noise, so render a dash instead.
-  const stepLabel = series === undefined || series.step <= 1 ? '–' : duration(series.step);
+  const stepLabel = series === undefined || series.step <= 1 ? '–' : duration(series.step, 2, lang);
 
   return (
     <div className="flex flex-col gap-6">
@@ -451,8 +408,13 @@ export default function NodeDetail(): ReactNode {
           </div>
 
           <div className="flex flex-col items-end gap-1 text-right text-[11px] text-muted">
+            {node.ip.length > 0 ? (
+              <span className="num">
+                {t('node.ip')}: {node.ip}
+              </span>
+            ) : null}
             <span>
-              {t('node.lastSeen')}: {relativeTime(node.last_seen, now)}
+              {t('node.lastSeen')}: {relativeTime(node.last_seen, now, lang)}
             </span>
             <span className="num">{dateTime(node.last_seen)}</span>
             <span className="num">
@@ -462,11 +424,7 @@ export default function NodeDetail(): ReactNode {
         </div>
       </header>
 
-      {!hasMetrics ? (
-        <p className="rounded-xl border border-warn/30 bg-warn/8 px-3.5 py-2.5 text-xs text-warn">
-          {t('node.noMetrics')}
-        </p>
-      ) : null}
+      {!hasMetrics ? <Notice tone="warn">{t('node.noMetrics')}</Notice> : null}
 
       {/* gauges */}
       <section className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -505,6 +463,7 @@ export default function NodeDetail(): ReactNode {
       <section className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
         <StatCard
           label={t('node.load1')}
+          icon={<IconActivity />}
           value={hasMetrics ? number(metrics.load1, 2) : '–'}
           hint={
             hasMetrics
@@ -514,31 +473,37 @@ export default function NodeDetail(): ReactNode {
         />
         <StatCard
           label={t('node.uptime')}
-          value={online ? duration(uptimeSeconds) : '–'}
-          hint={durationLong(uptimeSeconds)}
+          icon={<IconClock />}
+          value={online ? duration(uptimeSeconds, 2, lang) : '–'}
+          hint={durationLong(uptimeSeconds, lang)}
         />
         <StatCard
           label={t('node.rxRate')}
+          icon={<IconDownload />}
           value={hasMetrics ? rate(metrics.rx_rate) : '–'}
-          tone="accent"
+          tone="success"
         />
         <StatCard
           label={t('node.txRate')}
+          icon={<IconUpload />}
           value={hasMetrics ? rate(metrics.tx_rate) : '–'}
-          tone="warn"
+          tone="accent"
         />
         <StatCard
           label={t('node.trafficIn')}
+          icon={<IconDatabase />}
           value={hasMetrics ? bytes(metrics.net_in) : '–'}
           hint={hasMetrics ? `${int(metrics.net_in)} B` : undefined}
         />
         <StatCard
           label={t('node.trafficOut')}
+          icon={<IconDatabase />}
           value={hasMetrics ? bytes(metrics.net_out) : '–'}
           hint={hasMetrics ? `${int(metrics.net_out)} B` : undefined}
         />
         <StatCard
           label={t('node.swap')}
+          icon={<IconMemory />}
           value={hasMetrics && metrics.swap_total > 0 ? percent(swapPercent) : '–'}
           hint={
             hasMetrics && metrics.swap_total > 0
@@ -548,6 +513,7 @@ export default function NodeDetail(): ReactNode {
         />
         <StatCard
           label={t('node.process')}
+          icon={<IconCpu />}
           value={hasMetrics ? int(metrics.process) : '–'}
           hint={
             hasMetrics ? `TCP ${int(metrics.tcp)} · UDP ${int(metrics.udp)}` : undefined
@@ -599,8 +565,8 @@ export default function NodeDetail(): ReactNode {
               title={t('chart.cpuMem')}
               legend={
                 <>
-                  <LegendDot color={cssVar('--accent', '#3b82f6')} label="CPU" />
-                  <LegendDot color={cssVar('--success', '#22c55e')} label="MEM" />
+                  <LegendDot color={cssVar('--accent', '#0092ff')} label="CPU" />
+                  <LegendDot color={cssVar('--success', '#1cf8ba')} label="MEM" />
                 </>
               }
             >
@@ -612,8 +578,8 @@ export default function NodeDetail(): ReactNode {
                 title={t('chart.netRate')}
                 legend={
                   <>
-                    <LegendDot color={cssVar('--accent', '#3b82f6')} label="↓ RX" />
-                    <LegendDot color={cssVar('--warn', '#f59e0b')} label="↑ TX" />
+                    <LegendDot color={cssVar('--success', '#1cf8ba')} label="↓ RX" />
+                    <LegendDot color={cssVar('--accent', '#0092ff')} label="↑ TX" />
                   </>
                 }
               >
@@ -622,7 +588,7 @@ export default function NodeDetail(): ReactNode {
 
               <ChartCard
                 title={t('chart.load')}
-                legend={<LegendDot color={cssVar('--danger', '#ef4444')} label={t('node.load1')} />}
+                legend={<LegendDot color={cssVar('--danger', '#f0506e')} label={t('node.load1')} />}
               >
                 <Chart option={options.load} height={220} ariaLabel={t('chart.load')} />
               </ChartCard>
@@ -631,8 +597,8 @@ export default function NodeDetail(): ReactNode {
                 title={t('chart.traffic')}
                 legend={
                   <>
-                    <LegendDot color={cssVar('--accent', '#3b82f6')} label={t('node.trafficIn')} />
-                    <LegendDot color={cssVar('--warn', '#f59e0b')} label={t('node.trafficOut')} />
+                    <LegendDot color={cssVar('--success', '#1cf8ba')} label={t('node.trafficIn')} />
+                    <LegendDot color={cssVar('--accent', '#0092ff')} label={t('node.trafficOut')} />
                   </>
                 }
               >
@@ -641,7 +607,7 @@ export default function NodeDetail(): ReactNode {
 
               <ChartCard
                 title={t('chart.disk')}
-                legend={<LegendDot color={cssVar('--warn', '#f59e0b')} label={t('node.disk')} />}
+                legend={<LegendDot color={cssVar('--warn', '#f5a524')} label={t('node.disk')} />}
               >
                 <Chart option={options.disk} height={220} ariaLabel={t('chart.disk')} />
               </ChartCard>

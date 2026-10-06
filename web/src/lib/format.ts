@@ -5,6 +5,20 @@
 
 const BYTE_UNITS = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'] as const;
 
+/** Languages the duration/relative formatters know about. */
+export type FmtLang = 'en' | 'zh-CN';
+
+/** Unit suffixes per language; `en` keeps the compact `16d 4h` shape. */
+const DURATION_SUFFIX: Record<FmtLang, Record<string, string>> = {
+  en: { d: 'd', h: 'h', m: 'm', s: 's' },
+  'zh-CN': { d: '天', h: '小时', m: '分', s: '秒' },
+};
+
+const RELATIVE_SUFFIX: Record<FmtLang, Record<string, string>> = {
+  en: { y: 'y', mo: 'mo', w: 'w', d: 'd', h: 'h', m: 'm', s: 's' },
+  'zh-CN': { y: '年', mo: '个月', w: '周', d: '天', h: '小时', m: '分钟', s: '秒' },
+};
+
 function finite(value: unknown, fallback = 0): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 }
@@ -86,30 +100,34 @@ const DURATION_UNITS: Array<{ seconds: number; key: string }> = [
 ];
 
 /**
- * Compact duration, e.g. `"12d 4h"`, `"3h 07m"`, `"45s"`.
- * `parts` is capped so cards stay on one line.
+ * Compact duration, e.g. `"12d 4h"` / `"12天 4小时"` / `"45s"`.
+ * Zero-valued leading units are skipped, and `parts` is capped so cards stay on
+ * one line.
  */
-export function duration(value: number | null | undefined, parts = 2): string {
-  let total = Math.floor(finite(value, 0));
-  if (total <= 0) return '0s';
+export function duration(value: number | null | undefined, parts = 2, lang: FmtLang = 'en'): string {
+  const total0 = Math.floor(finite(value, 0));
+  const zero = lang === 'zh-CN' ? '0秒' : '0s';
+  if (total0 <= 0) return zero;
+  const suffix = DURATION_SUFFIX[lang];
+  let total = total0;
   const out: string[] = [];
   for (const unit of DURATION_UNITS) {
     if (out.length >= parts) break;
     const count = Math.floor(total / unit.seconds);
-    if (count > 0 || (out.length > 0 && unit.key === 'm')) {
-      out.push(`${count}${unit.key}`);
+    if (count > 0) {
+      out.push(`${count}${suffix[unit.key]}`);
       total -= count * unit.seconds;
     }
   }
-  return out.length > 0 ? out.join(' ') : '0s';
+  return out.length > 0 ? out.join(' ') : zero;
 }
 
 /** Alias used by the node cards for `uptime`. */
 export const uptime = duration;
 
 /** Full duration for tooltips: `"12d 4h 3m 9s"`. */
-export function durationLong(value: number | null | undefined): string {
-  return duration(value, 4);
+export function durationLong(value: number | null | undefined, lang: FmtLang = 'en'): string {
+  return duration(value, 4, lang);
 }
 
 const RELATIVE_UNITS: Array<{ seconds: number; key: string }> = [
@@ -122,19 +140,27 @@ const RELATIVE_UNITS: Array<{ seconds: number; key: string }> = [
   { seconds: 1, key: 's' },
 ];
 
-/** `"3m ago"` / `"just now"` / `"in 2h"`, from an epoch-seconds timestamp. */
-export function relativeTime(ts: number | null | undefined, now = Date.now()): string {
+/** `"3m ago"` / `"3分钟前"` / `"just now"` / `"刚刚"`, from epoch seconds. */
+export function relativeTime(
+  ts: number | null | undefined,
+  now = Date.now(),
+  lang: FmtLang = 'en',
+): string {
+  const justNow = lang === 'zh-CN' ? '刚刚' : 'just now';
   if (ts === null || ts === undefined || !Number.isFinite(ts) || ts <= 0) return '–';
   const delta = Math.round(now / 1000 - ts);
   const abs = Math.abs(delta);
-  if (abs < 5) return 'just now';
+  if (abs < 5) return justNow;
+  const suffix = RELATIVE_SUFFIX[lang];
   for (const unit of RELATIVE_UNITS) {
     if (abs >= unit.seconds) {
       const count = Math.floor(abs / unit.seconds);
-      return delta >= 0 ? `${count}${unit.key} ago` : `in ${count}${unit.key}`;
+      const label = `${count}${suffix[unit.key]}`;
+      if (lang === 'zh-CN') return delta >= 0 ? `${label}前` : `${label}后`;
+      return delta >= 0 ? `${label} ago` : `in ${label}`;
     }
   }
-  return 'just now';
+  return justNow;
 }
 
 /** Epoch seconds → local `"2026-10-05 20:54:04"`. */

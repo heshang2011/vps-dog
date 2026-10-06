@@ -1,7 +1,15 @@
 import { useQuery } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { ErrorBanner, PageHeader } from '../../components/PageHeader';
-import { StatCard } from '../../components/StatCard';
+import { StatCard, StatCardSkeleton } from '../../components/StatCard';
+import {
+  IconActivity,
+  IconAlertTriangle,
+  IconCalendar,
+  IconChart,
+  IconDatabase,
+  IconServer,
+} from '../../components/icons';
 import { adminApi, errorMessage, qk } from '../../lib/api';
 import { bytes, dateTime, int, percent } from '../../lib/format';
 import { useI18n } from '../../lib/i18n';
@@ -33,35 +41,48 @@ export default function AdminOverview(): ReactNode {
       ) : null}
 
       {overviewQuery.isPending ? (
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           {[0, 1, 2, 3, 4, 5].map((index) => (
-            <div key={index} className="card flex flex-col gap-2 p-4">
-              <div className="skeleton h-3 w-20" />
-              <div className="skeleton h-7 w-16" />
-            </div>
+            <StatCardSkeleton key={index} />
           ))}
         </div>
       ) : data === undefined ? null : (
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
-          <StatCard label={t('admin.overview.nodes')} value={int(data.nodes)} />
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <StatCard
+            label={t('admin.overview.nodes')}
+            value={int(data.nodes)}
+            icon={<IconServer />}
+            tone="accent"
+          />
           <StatCard
             label={t('admin.overview.online')}
             value={int(data.online)}
+            icon={<IconActivity />}
             tone="success"
             hint={percent(healthPercent, 1)}
           />
           <StatCard
             label={t('admin.overview.offline')}
             value={int(data.offline)}
-            tone={data.offline > 0 ? 'danger' : 'default'}
+            icon={<IconAlertTriangle />}
+            tone={data.offline > 0 ? 'danger' : 'muted'}
           />
-          <StatCard label={t('admin.overview.rows')} value={int(data.metrics_rows)} />
           <StatCard
+            label={t('admin.overview.rows')}
+            value={int(data.metrics_rows)}
+            icon={<IconChart />}
+          />
+          <StatCard
+            icon={<IconCalendar />}
             label={t('admin.overview.oldest')}
             value={data.oldest_ts > 0 ? dateTime(data.oldest_ts).slice(0, 10) : '–'}
             hint={data.oldest_ts > 0 ? dateTime(data.oldest_ts) : undefined}
           />
-          <StatCard label={t('admin.overview.d1')} value={bytes(data.d1_size)} />
+          <StatCard
+            label={t('admin.overview.d1')}
+            value={bytes(data.d1_size)}
+            icon={<IconDatabase />}
+          />
         </div>
       )}
     </div>

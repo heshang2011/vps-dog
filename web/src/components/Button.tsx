@@ -1,8 +1,10 @@
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
 import { Spinner } from './Spinner';
+import { PILL_FILL, PILL_IDLE } from './pill';
 
-export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
-export type ButtonSize = 'sm' | 'md';
+export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'pill' | 'pill-surface';
+/** `pill` / `pill-surface` match the header controls (`h-8.5`, `rounded-xl`). */
+export type ButtonSize = 'sm' | 'md' | 'pill';
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
@@ -21,11 +23,16 @@ const VARIANT_CLASS: Record<ButtonVariant, string> = {
   ghost: 'bg-transparent text-muted border border-transparent hover:bg-surface-2 hover:text-text',
   danger:
     'bg-danger/12 text-danger border border-danger/35 hover:bg-danger/20 hover:border-danger/55',
+  // Same chrome as the header's theme / language pills. The border *width* has
+  // to be spelled out here — the shared tokens only carry the border colour.
+  pill: `border ${PILL_IDLE} ${PILL_FILL.canvas}`,
+  'pill-surface': `border ${PILL_IDLE} ${PILL_FILL.surface}`,
 };
 
 const SIZE_CLASS: Record<ButtonSize, string> = {
   sm: 'h-8 px-2.5 text-xs gap-1.5 rounded-lg',
   md: 'h-9.5 px-3.5 text-sm gap-2 rounded-xl',
+  pill: 'h-8.5 px-2.5 text-xs gap-1.5 rounded-xl',
 };
 
 export function Button({
@@ -64,6 +71,12 @@ export interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement>
   children: ReactNode;
 }
 
+const ICON_SIZE_CLASS: Record<ButtonSize, string> = {
+  sm: 'size-8',
+  md: 'size-9.5',
+  pill: 'size-8.5',
+};
+
 export function IconButton({
   label,
   variant = 'ghost',
@@ -79,7 +92,7 @@ export function IconButton({
       aria-label={label}
       title={label}
       className={`inline-flex items-center justify-center rounded-lg border transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-55 ${
-        size === 'sm' ? 'size-8' : 'size-9.5'
+        ICON_SIZE_CLASS[size]
       } ${VARIANT_CLASS[variant]} ${className}`}
       {...rest}
     >

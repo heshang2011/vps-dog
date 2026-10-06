@@ -45,6 +45,8 @@ export interface NodeRow {
   updated_at: number;
   last_seen: number;
   latest: string | null;
+  /** Source address of the last report; `''` until the node first checks in. */
+  ip: string;
 }
 
 export interface PingTaskRow {
@@ -266,6 +268,7 @@ export function mapNodeSummary(row: NodeRow, offlineAfter: number, now: number):
     group: str(row.group_name, 'default'),
     region: str(row.region),
     tags: parseTags(row.tags),
+    ip: str(row.ip),
     hidden: bool(row.hidden),
     online: isOnline(row, offlineAfter, now),
     last_seen: num(row.last_seen),
@@ -388,8 +391,19 @@ export async function updateNode(
   return getNode(db, id);
 }
 
-export async function deleteNode(db: D1Database, id: string): Promise<void> {
-  await db.batch([
+/**
+ * Record the source address a node last reported from.
+ *
+ * Deliberately not folded into `updateNode`: the IP is owned by the ingest
+ * path (it reflects where reports actually come from), so it must not be
+ * settable through the admin PATCH endpoint — a manual value would be silently
+ * overwritten by the next report.
+ */
+export async function setNodeIp(db: D1Database, id: string, ip: string): Promise<void> {
+  await db.prepare('UPDATE nodes SET ip = ? WHERE id = ?').bind(ip, id).run();
+}
+
+export async function deleteNode(db: D1Database, id: string): Promise<void> {  await db.batch([
     db.prepare('DELETE FROM metrics WHERE node_id = ?').bind(id),
     db.prepare('DELETE FROM ping_records WHERE node_id = ?').bind(id),
     db.prepare('DELETE FROM ping_tasks WHERE node_id = ?').bind(id),

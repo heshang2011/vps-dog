@@ -3,6 +3,7 @@ import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { Badge } from '../../components/Badge';
 import { Button } from '../../components/Button';
 import { Input, Textarea } from '../../components/Input';
+import { FormError } from '../../components/Notice';
 import { ErrorBanner, PageHeader } from '../../components/PageHeader';
 import { Select } from '../../components/Select';
 import { useToast } from '../../components/Toast';
@@ -111,9 +112,9 @@ export default function AdminSettings(): ReactNode {
           ))}
         </div>
       ) : (
-        <form className="flex flex-col gap-5" onSubmit={onSubmit} noValidate>
+        <form className="flex flex-col gap-4" onSubmit={onSubmit} noValidate>
           <section className="card flex flex-col gap-4 p-5">
-            <h2 className="text-sm font-semibold text-text">{t('admin.settings.siteName')}</h2>
+            <h2 className="text-sm font-semibold text-text">{t('admin.settings.group.identity')}</h2>
             <Input
               label={t('admin.settings.siteName')}
               value={form.site_name}
@@ -128,7 +129,7 @@ export default function AdminSettings(): ReactNode {
           </section>
 
           <section className="card flex flex-col gap-4 p-5">
-            <h2 className="text-sm font-semibold text-text">{t('admin.settings.reportInterval')}</h2>
+            <h2 className="text-sm font-semibold text-text">{t('admin.settings.group.reporting')}</h2>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <Input
                 label={t('admin.settings.reportInterval')}
@@ -163,7 +164,7 @@ export default function AdminSettings(): ReactNode {
           </section>
 
           <section className="card flex flex-col gap-4 p-5">
-            <h2 className="text-sm font-semibold text-text">{t('admin.settings.theme')}</h2>
+            <h2 className="text-sm font-semibold text-text">{t('admin.settings.group.appearance')}</h2>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <Select
                 label={t('admin.settings.theme')}
@@ -182,11 +183,7 @@ export default function AdminSettings(): ReactNode {
             />
           </section>
 
-          {formError !== null ? (
-            <p role="alert" className="rounded-xl border border-danger/30 bg-danger/8 px-3 py-2 text-xs text-danger">
-              {formError}
-            </p>
-          ) : null}
+          {formError !== null ? <FormError message={formError} /> : null}
 
           <div className="flex flex-wrap items-center gap-2">
             {canEdit ? (

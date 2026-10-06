@@ -6,36 +6,37 @@
 
 /* ── Design tokens ─────────────────────────────────────────────────────────
    Dark is the default; `.dark` re-declares the same names with the dark
-   palette from the interface contract (§7). */
+   palette. Both themes share the same hues — deep navy + teal — so a theme
+   switch changes lightness, not identity. */
 :root {
-  --bg: #f6f8fa;
+  --bg: #f4f7fb;
   --surface: #ffffff;
-  --surface-2: #f1f5f9;
-  --border: #e2e8f0;
-  --text: #0f172a;
-  --muted: #64748b;
-  --accent: #3b82f6;
-  --accent-soft: #dbeafe;
-  --success: #16a34a;
-  --warn: #d97706;
-  --danger: #dc2626;
-  --grid: #e8edf3;
-  --shadow-soft: 0 1px 2px 0 rgb(15 23 42 / 0.04);
+  --surface-2: #eef3f9;
+  --border: #d7e3ef;
+  --text: #0a1b2b;
+  --muted: #5b7186;
+  --accent: #0074cc;
+  --accent-soft: #d9ecff;
+  --success: #0d9b76;
+  --warn: #b45309;
+  --danger: #d92d4b;
+  --grid: #e3ecf5;
+  --shadow-soft: 0 1px 2px 0 rgb(6 18 36 / 0.05);
 }
 
 .dark {
-  --bg: #0b0f14;
-  --surface: #131a22;
-  --surface-2: #182130;
-  --border: #1f2a36;
-  --text: #e6edf3;
-  --muted: #8b98a5;
-  --accent: #3b82f6;
-  --accent-soft: #17253c;
-  --success: #22c55e;
-  --warn: #f59e0b;
-  --danger: #ef4444;
-  --grid: #1b2531;
+  --bg: #05111f;
+  --surface: #08192b;
+  --surface-2: #0d2033;
+  --border: #15395e;
+  --text: #e8f0f8;
+  --muted: #7d93ab;
+  --accent: #0092ff;
+  --accent-soft: #0a2a45;
+  --success: #1cf8ba;
+  --warn: #f5a524;
+  --danger: #f0506e;
+  --grid: #0f2740;
   --shadow-soft: none;
 }
 

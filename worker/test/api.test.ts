@@ -373,8 +373,33 @@ describe('agent ingest', () => {
     expect(found?.load1).toBeCloseTo(1.25, 2);
   });
 
-  it('stores two reports as two history points', async () => {
+  it('records the reporting source IP, and follows it when it changes', async () => {
     const cookie = await adminCookie();
+    const { node, token } = await createNode(cookie, 'ip-01');
+
+    // Before the first report there is no address to show.
+    const before = await api(`/api/nodes/${node.id}`);
+    expect(((await before.json()) as { ip: string }).ip).toBe('');
+
+    const first = await api(
+      '/api/v1/report',
+      reportInit(token, { metrics: sample() }, { 'CF-Connecting-IP': '203.0.113.42' }),
+    );
+    expect(first.status).toBe(200);
+
+    const after = await api(`/api/nodes/${node.id}`);
+    expect(((await after.json()) as { ip: string }).ip).toBe('203.0.113.42');
+
+    // A later report from a different address must overwrite it, not stick.
+    await api(
+      '/api/v1/report',
+      reportInit(token, { metrics: sample() }, { 'CF-Connecting-IP': '198.51.100.7' }),
+    );
+    const moved = await api(`/api/nodes/${node.id}`);
+    expect(((await moved.json()) as { ip: string }).ip).toBe('198.51.100.7');
+  });
+
+  it('stores two reports as two history points', async () => {    const cookie = await adminCookie();
     const { node, token } = await createNode(cookie, 'hist-01');
     const t0 = nowSec();
 

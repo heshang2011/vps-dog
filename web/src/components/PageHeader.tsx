@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { NOTICE_TONE } from './Notice';
 
 export interface PageHeaderProps {
   title: string;
@@ -30,7 +31,7 @@ export function ErrorBanner({ message, onRetry, retryLabel }: ErrorBannerProps):
   return (
     <div
       role="alert"
-      className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-danger/30 bg-danger/8 px-3.5 py-2.5 text-xs text-danger"
+      className={`flex flex-wrap items-center justify-between gap-3 rounded-xl border px-3.5 py-2.5 text-xs ${NOTICE_TONE.danger}`}
     >
       <span className="min-w-0 break-words">{message}</span>
       {onRetry !== undefined ? (

@@ -37,6 +37,8 @@ export interface NodeSummary {
   group: string;
   region: string;
   tags: string[];
+  /** Source address of the last report; `''` until the node first checks in. */
+  ip: string;
   hidden: boolean;
   online: boolean;
   last_seen: number;

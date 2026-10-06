@@ -2,7 +2,7 @@
  * Agent ingest — `POST /api/v1/report` (§4.1).
  */
 import { Hono } from 'hono';
-import { readAgentToken } from '../auth';
+import { clientIp, readAgentToken } from '../auth';
 import {
   coerceSample,
   createNode,
@@ -13,6 +13,7 @@ import {
   insertMetric,
   insertPingRecord,
   listPingTasks,
+  setNodeIp,
   updateNode,
 } from '../db';
 import type { AppEnv, MetricSample } from '../types';
@@ -123,6 +124,14 @@ agentRoutes.post('/report', async (c) => {
 
   // ── store the sample ──────────────────────────────────────────────────────
   await insertMetric(db, sample, node.id, ts);
+
+  // The agent dials out from the monitored host, so the request's source
+  // address is that host's public address. Recording it here means the
+  // dashboard can show an IP without any agent change or re-install.
+  const sourceIp = clientIp(c.req.raw);
+  if (sourceIp !== 'unknown' && sourceIp !== str(node.ip)) {
+    await setNodeIp(db, node.id, sourceIp);
+  }
 
   const host = body.host && typeof body.host === 'object' && !Array.isArray(body.host)
     ? (body.host as Record<string, unknown>)

@@ -92,9 +92,9 @@ CREATE TABLE IF NOT EXISTS nodes (
   created_at  INTEGER NOT NULL,
   updated_at  INTEGER NOT NULL,
   -- denormalised latest state (keeps the dashboard to a single query)
-  online      INTEGER NOT NULL DEFAULT 0,
   last_seen   INTEGER NOT NULL DEFAULT 0,
-  latest      TEXT                       -- JSON MetricSample | NULL
+  latest      TEXT,                      -- JSON MetricSample | NULL
+  ip          TEXT NOT NULL DEFAULT ''   -- source address of the last report (§4.1)
 );
 CREATE INDEX IF NOT EXISTS idx_nodes_sort ON nodes(sort_order, created_at);
 
@@ -231,6 +231,7 @@ interface NodeSummary {
   group: string;        // from group_name
   region: string;
   tags: string[];
+  ip: string;           // source address of the last report; '' until first contact
   hidden: boolean;
   online: boolean;
   last_seen: number;
@@ -337,6 +338,13 @@ interface MetricSeries {
 它会被钳制在 **当前时间 − 7 天 … 当前时间 + 1 小时**；超出范围的值会替换为
 服务器时钟。该行按 `(node_id, ts)` 做 upsert，因此重复发送同一
 时间戳会覆盖而不是产生重复行。
+
+每次上报还会把**请求来源地址**（`CF-Connecting-IP`，缺失时回退
+`X-Forwarded-For` 的第一段）写入 `nodes.ip` —— Agent 是从被监控主机主动拨出的，
+所以这个地址就是该主机的公网出口 IP，**无需改 Agent、也无需重装**。
+地址变化时会覆盖旧值；取不到地址时保持原值不动。
+该字段由摄取路径独占写入，**不接受** `PATCH /api/admin/nodes/:id` 修改 ——
+手工设的值会被下一次上报静默覆盖。
 
 `200` 响应：
 
@@ -557,16 +565,26 @@ tls_skip_verify: false
 **设计语言**（这是首要要求 ——「界面简洁美观」）：
 - 深色优先，但也提供真正的浅色主题。默认跟随 `prefers-color-scheme`，
   可被覆盖；持久化在 `localStorage` 的 `vpsdog.theme` 下。
-- 配色 —— 深色：背景 `#0b0f14`，表面 `#131a22`，边框 `#1f2a36`，
-  文本 `#e6edf3`，弱化 `#8b98a5`，强调 `#3b82f6`，成功 `#22c55e`，
-  警告 `#f59e0b`，危险 `#ef4444`。
-  浅色：背景 `#f6f8fa`，表面 `#ffffff`，边框 `#e2e8f0`，文本 `#0f172a`，
-  弱化 `#64748b`。
+- 配色 —— 深色：背景 `#05111f`，表面 `#08192b`，次级表面 `#0d2033`，
+  边框 `#15395e`，文本 `#e8f0f8`，弱化 `#7d93ab`，强调（蓝）`#0092ff`，
+  成功（青绿）`#1cf8ba`，警告 `#f5a524`，危险 `#f0506e`。
+  浅色：背景 `#f4f7fb`，表面 `#ffffff`，次级表面 `#eef3f9`，边框 `#d7e3ef`，
+  文本 `#0a1b2b`，弱化 `#5b7186`，强调 `#0074cc`，成功 `#0d9b76`，
+  警告 `#b45309`，危险 `#d92d4b`。
+  两套主题共用同一组色相（深海军蓝 + 青绿），切换主题只改明度、不改身份。
+- 语义色分工固定：**下行 / 接收 = 成功色（青绿）**，**上行 / 发送 = 强调色（蓝）**，
+  环形图、折线图、图例与指标条一律遵守；磁盘与负载沿用警告 / 危险色。
 - 圆角 2xl 卡片、1px 边框、无重阴影、充足留白，
   所有数字使用 tabular-nums、150 ms 微妙过渡。
 - 在线 = 脉动的绿点；离线 = 灰点。
+- 仪表盘的每台服务器是一张**可折叠**卡片：头部（状态点 / 名称 / 状态徽章 / 折叠箭头）、
+  元信息行（IP · 运行时长 · 系统 · 最后上报）、三栏主体（指标条 | 流量折线 | 上下行环形 + 协议占比）、
+  以及底部的今日 / 近 24 小时 / 总流量与「查看详情」。**折叠状态下不请求该节点的历史接口**，
+  展开才按当前时间窗拉取。
+- 时长与相对时间（`duration` / `relativeTime`）接受 `lang` 参数，中文输出
+  `16天` / `4分钟前`，英文输出 `16d` / `4m ago`；调用处必须传入当前语言。
 - 响应式：小于 640 px 单列，小于 1024 px 两列，之上三列及以上。管理表格在移动端
-  横向滚动。
+  横向滚动。节点卡片的三栏主体在 1280 px 以下折为单列。
 - 图表：除一条淡淡的水平线外无网格线，平滑曲线，
   面积渐变填充，十字准星提示框。
 - i18n：`zh-CN` 与 `en`，从 `navigator.language` 自动检测，页头
