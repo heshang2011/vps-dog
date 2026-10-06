@@ -209,6 +209,17 @@ export function IconBell({ className = 'size-4' }: IconProps): ReactNode {
   );
 }
 
+export function IconBellOff({ className = 'size-4' }: IconProps): ReactNode {
+  return svg(
+    <>
+      <path d="M18 8.6a6 6 0 1 0-12 0c0 5-2 6.4-2 6.4h16s-2-1.4-2-6.4Z" />
+      <path d="M13.7 19a2 2 0 0 1-3.4 0" />
+      <path d="M3 3l14 14" />
+    </>,
+    className,
+  );
+}
+
 export function IconShield({ className = 'size-4' }: IconProps): ReactNode {
   return svg(
     <>

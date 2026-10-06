@@ -50,6 +50,8 @@ export function Donut({
         strokeWidth={thickness}
         strokeDasharray={`${length} ${circumference - length}`}
         strokeDashoffset={-offset}
+        // CSS transitions turn attribute updates into smooth ring sweeps.
+        style={{ transition: 'stroke-dasharray 600ms ease-out, stroke-dashoffset 600ms ease-out' }}
       />
     );
     offset += length;

@@ -1,10 +1,11 @@
 import { Link } from 'react-router-dom';
-import { useId, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useId, useMemo, useState, type ReactNode } from 'react';
 import { Badge, StatusDot } from './Badge';
 import { Button } from './Button';
 import { Chart, ChartSkeleton, lineSeries } from './Chart';
 import { Donut } from './Donut';
 import { type MeterStyle } from './MeterStyleSwitch';
+import { IconBellOff } from './icons';
 import { ProgressBar } from './ProgressBar';
 import { RangeSwitch, type RangeHours } from './RangeSwitch';
 import {
@@ -25,7 +26,7 @@ import {
   IconRefresh,
   IconUpload,
 } from './icons';
-import { bytes, cssVar, daysUntil, duration, number, quota, rate, ratioPercent, relativeTime, thresholdTone, toneColor } from '../lib/format';
+import { bytes, countryFlag, cssVar, daysUntil, duration, number, quota, rate, ratioPercent, relativeTime, thresholdTone, toneColor } from '../lib/format';
 import { useI18n } from '../lib/i18n';
 import { useNodeMetrics, useNow } from '../lib/useLive';
 import type { MetricPoint, NodeSummary } from '../lib/types';
@@ -69,6 +70,16 @@ function MetricTile({
   hints?: readonly string[];
   mode?: MeterStyle;
 }): ReactNode {
+  // Ring mode sweeps from 0 to its value on mount (the Donut's CSS transition
+  // does the animating); updates afterwards morph in place.
+  const [armed, setArmed] = useState(false);
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setArmed(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
+  const ringPercent = armed ? Math.max(0, Math.min(100, percent)) : 0;
+  const ringColor = toneColor(thresholdTone(percent));
+
   if (mode === 'ring') {
     return (
       <div className={`flex h-full flex-col items-center gap-2 p-3 text-center ${TILE}`}>
@@ -83,7 +94,12 @@ function MetricTile({
             size={72}
             thickness={8}
             ariaLabel={`${label}: ${value}`}
-            slices={[{ label, value: percent, color: toneColor(thresholdTone(percent)) }]}
+            // Two slices: the value arc plus a transparent remainder. A single
+            // slice is always its own total, i.e. a perpetually full ring.
+            slices={[
+              { label, value: ringPercent, color: ringColor },
+              { label: `${label}-rest`, value: 100 - ringPercent, color: 'transparent' },
+            ]}
             centerBottom={<span className="num text-[11px] font-semibold text-text">{value}</span>}
           />
         </div>
@@ -100,16 +116,16 @@ function MetricTile({
     );
   }
   return (
-    <div className={`flex h-full flex-col gap-2.5 p-3.5 ${TILE}`}>
-      <div className="flex items-center gap-2.5">
-        <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-success/12 text-success">
+    // Bar mode, three stacked rows: icon+label, the big value, then the detail
+    // lines, with the bar pinned to the bottom.
+    <div className={`flex h-full flex-col gap-1.5 p-3.5 ${TILE}`}>
+      <div className="flex items-center gap-2">
+        <span className="flex size-6 shrink-0 items-center justify-center rounded-lg bg-success/12 text-success">
           {icon}
         </span>
-        <span className="flex min-w-0 flex-col">
-          <span className="truncate text-[11px] text-muted">{label}</span>
-          <span className="num text-sm font-semibold text-text">{value}</span>
-        </span>
+        <span className="min-w-0 truncate text-[11px] text-muted">{label}</span>
       </div>
+      <span className="num text-xl leading-tight font-semibold text-text">{value}</span>
       {hints.length > 0 ? (
         <span className="mt-auto flex flex-col gap-0.5">
           {hints.map((line) => (
@@ -330,6 +346,11 @@ export function NodeCard({ node, meterStyle, defaultExpanded = true }: NodeCardP
           <Badge tone={online ? 'success' : 'muted'} dot>
             {statusLabel}
           </Badge>
+          {node.notify === false ? (
+            <span title={t('node.notifyOff')} className="text-muted">
+              <IconBellOff className="size-3.5" />
+            </span>
+          ) : null}
           <span className="ml-auto flex shrink-0 items-center gap-2">
             <span className="sr-only">{expanded ? t('common.collapse') : t('common.expand')}</span>
             <span className="flex size-7 items-center justify-center rounded-full border border-border text-muted">
@@ -342,15 +363,23 @@ export function NodeCard({ node, meterStyle, defaultExpanded = true }: NodeCardP
       {/* ── meta strip ── */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-5 pb-3.5 text-[11px] text-muted">
         <IconRefresh className="size-3.5 text-success" />
-        {node.ip.length > 0 ? (
-          <>
-            <span className="flex items-center gap-1.5">
-              <span>{t('node.ip')}</span>
-              <span className="num text-text/85">{node.ip}</span>
-            </span>
-            <span aria-hidden="true">·</span>
-          </>
+        {node.country.length > 0 ? (
+          // Country + flag replaces the raw IP on the strip; the IP survives
+          // as the hover tooltip and on the detail page.
+          <span
+            className="flex items-center gap-1.5"
+            title={node.ip.length > 0 ? `${t('node.ip')} ${node.ip}` : undefined}
+          >
+            <span className="text-[13px] leading-none">{countryFlag(node.country)}</span>
+            <span className="num text-text/85">{node.country}</span>
+          </span>
+        ) : node.ip.length > 0 ? (
+          <span className="flex items-center gap-1.5">
+            <span>{t('node.ip')}</span>
+            <span className="num text-text/85">{node.ip}</span>
+          </span>
         ) : null}
+        {node.country.length > 0 || node.ip.length > 0 ? <span aria-hidden="true">·</span> : null}
         <span className="flex items-center gap-1.5">
           <span>{t('node.uptime')}</span>
           <span className="num text-text/85">{online ? duration(node.uptime, 2, lang) : '–'}</span>

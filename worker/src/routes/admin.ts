@@ -223,6 +223,7 @@ adminRoutes.post('/nodes', async (c) => {
     price: str(body.price),
     trafficGb: clampInt(body.traffic_gb, 0, 1_000_000, 0),
     expiresAt: str(body.expires_at),
+    notify: 'notify' in body ? bool(body.notify, true) : true,
   });
 
   await audit(c, 'node.create', node.id, name);

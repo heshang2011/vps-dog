@@ -1,10 +1,11 @@
+import { useEffect, useRef, useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import type { ReactNode } from 'react';
 import { StatusDot } from './Badge';
 import { IconBell, IconGear, IconShield } from './icons';
 import { useI18n } from '../lib/i18n';
 import { useTheme, type ThemeMode } from '../lib/theme';
-import { useStatusLive } from '../lib/useLive';
+import { useNodesLive, useStatusLive } from '../lib/useLive';
 import { PILL_ACTIVE, PILL_BASE, PILL_FILL, PILL_IDLE, type PillSurface } from './pill';
 
 /* ── theme ────────────────────────────────────────────────────────────────── */
@@ -109,23 +110,89 @@ export function PillLink({ to, icon, label, collapseLabel = true }: PillLinkProp
 }
 
 /**
- * A pill for a destination that does not exist yet. Rendered so the header
- * matches the design, but inert and honest about it on hover.
+ * The header's notification pill: live alert state plus a popover listing the
+ * nodes that are currently offline and the ones with alerts muted, with a
+ * shortcut to the Telegram configuration.
  */
-export function PillPlaceholder({ icon, label }: { icon: ReactNode; label: string }): ReactNode {
+export function NotifyPill(): ReactNode {
   const { t } = useI18n();
-  const hint = `${label} — ${t('dashboard.notImplemented')}`;
+  const { data } = useNodesLive();
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (event: MouseEvent) => {
+      if (wrapRef.current !== null && !wrapRef.current.contains(event.target as Node)) setOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  const nodes = data?.nodes ?? [];
+  const offline = nodes.filter((node) => !node.online);
+  const muted = nodes.filter((node) => node.notify === false);
+  const alerting = offline.length > 0;
+
   return (
-    <button
-      type="button"
-      disabled
-      title={hint}
-      aria-label={hint}
-      className={`${PILL_BASE} ${PILL_IDLE} ${PILL_FILL.canvas} cursor-not-allowed gap-1.5 px-2.5 text-xs font-medium opacity-45`}
-    >
-      {icon}
-      <span className="hidden sm:inline">{label}</span>
-    </button>
+    <div ref={wrapRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        aria-expanded={open}
+        aria-label={t('nav.notifications')}
+        title={t('nav.notifications')}
+        className={`${PILL_BASE} ${
+          alerting ? 'border-danger/40 bg-danger/10 text-danger' : `${PILL_IDLE} ${PILL_FILL.canvas}`
+        } relative gap-1.5 px-2.5 text-xs font-medium`}
+      >
+        <IconBell className="size-4" />
+        <span className="hidden sm:inline">{t('nav.notifications')}</span>
+        {alerting ? (
+          <span className="absolute -top-0.5 -right-0.5 size-2 rounded-full bg-danger" aria-hidden="true" />
+        ) : null}
+      </button>
+
+      {open ? (
+        <div className="card absolute right-0 top-full z-50 mt-2 w-64 p-3 text-left shadow-lg">
+          <p className="text-xs font-semibold text-text">{t('nav.notifications')}</p>
+          <div className="mt-2 flex flex-col gap-1">
+            <p className="text-[11px] font-medium text-muted">{t('notify.offlineSection')}</p>
+            {offline.length === 0 ? (
+              <p className="text-[11px] text-success">{t('notify.allOnline')}</p>
+            ) : (
+              offline.map((node) => (
+                <span key={node.id} className="flex items-center gap-2 text-[11px] text-text">
+                  <StatusDot online={false} label={node.name} size="sm" />
+                  <span className="min-w-0 flex-1 truncate">{node.name}</span>
+                  {node.notify === false ? <IconBell className="size-3 text-muted opacity-50" /> : null}
+                </span>
+              ))
+            )}
+          </div>
+          {muted.length > 0 ? (
+            <div className="mt-2 flex flex-col gap-1 border-t border-border pt-2">
+              <p className="text-[11px] font-medium text-muted">{t('notify.mutedSection')}</p>
+              <p className="truncate text-[11px] text-muted">{muted.map((node) => node.name).join('、')}</p>
+            </div>
+          ) : null}
+          <NavLink
+            to="/admin/settings"
+            onClick={() => setOpen(false)}
+            className="mt-2 block border-t border-border pt-2 text-[11px] font-medium text-accent transition-colors duration-150 hover:text-text"
+          >
+            {t('notify.configure')} →
+          </NavLink>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -135,7 +202,7 @@ export function HeaderNav(): ReactNode {
   return (
     <>
       <PillLink to="/admin/settings" icon={<IconGear />} label={t('nav.system')} />
-      <PillPlaceholder icon={<IconBell />} label={t('nav.notifications')} />
+      <NotifyPill />
       <PillLink to="/admin" icon={<IconShield />} label={t('nav.admin')} />
     </>
   );

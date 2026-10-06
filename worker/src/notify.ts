@@ -125,9 +125,10 @@ interface NotifyRow {
  * Scan all nodes for offline/recovery transitions and deliver the messages.
  *
  * Called from `scheduled()` every five minutes. Cheap no-op (one settings read)
- * while Telegram is unconfigured or both event kinds are off. Flags are
- * persisted only for messages that were actually delivered, so a Telegram
- * outage never silently swallows an alert — it delays it to the next tick.
+ * while Telegram is unconfigured or both event kinds are off. Nodes with
+ * `notify = 0` are skipped entirely. Flags are persisted only for messages
+ * that were actually delivered, so a Telegram outage never silently swallows
+ * an alert — it delays it to the next tick.
  */
 export async function runNotifyScan(env: Env, now = nowSec()): Promise<NotifyScanCounts> {
   const counts: NotifyScanCounts = { offline_sent: 0, online_sent: 0, send_failures: 0 };
@@ -136,7 +137,7 @@ export async function runNotifyScan(env: Env, now = nowSec()): Promise<NotifySca
   if (!settings.tg_notify_offline && !settings.tg_notify_online) return counts;
 
   const res = await env.DB
-    .prepare('SELECT id, name, group_name, ip, last_seen, notified_offline FROM nodes')
+    .prepare('SELECT id, name, group_name, ip, last_seen, notified_offline FROM nodes WHERE notify = 1')
     .all<NotifyRow>();
   const rows = res.results ?? [];
 

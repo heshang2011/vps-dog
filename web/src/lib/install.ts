@@ -53,3 +53,18 @@ export function buildInstallCommand({
 
   return `curl -fsSL ${INSTALL_SCRIPT_URL} | bash -s -- ${args.join(' ')}`;
 }
+
+/**
+ * `curl -fsSL <install.sh> | bash -s -- -u`
+ *
+ * Stops and disables the systemd unit (or kills the detached process on
+ * init-less hosts) and removes the service file. Config at `/etc/vps-dog` and
+ * the binary at `/usr/local/bin/vps-dog` are kept — the script prints the
+ * one-liner to purge them; surface that hint alongside.
+ */
+export function buildUninstallCommand(): string {
+  return `curl -fsSL ${INSTALL_SCRIPT_URL} | bash -s -- -u`;
+}
+
+/** Follow-up that also wipes the kept config and binary. */
+export const UNINSTALL_PURGE_HINT = 'sudo rm -rf /etc/vps-dog /usr/local/bin/vps-dog';

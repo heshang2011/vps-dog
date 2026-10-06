@@ -170,9 +170,14 @@ export default function AdminLayout(): ReactNode {
               <LangToggle onSurface />
             </div>
             <div className="flex flex-col gap-1.5">
-              <Link to="/" className="px-2 text-xs text-muted transition-colors duration-150 hover:text-text">
+              <Button
+                size="pill"
+                variant="pill-surface"
+                block
+                onClick={() => void navigate('/')}
+              >
                 {t('admin.backToSite')}
-              </Link>
+              </Button>
               <Button
                 size="pill"
                 variant="pill-surface"

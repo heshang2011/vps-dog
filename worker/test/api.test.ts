@@ -1264,6 +1264,56 @@ describe('telegram notifications', () => {
     expect(fetchMock).not.toHaveBeenCalled();
     expect(await flagOf(node.id)).toBe(0);
   });
+
+  it('skips nodes whose per-node notify flag is off', async () => {
+    const cookie = await adminCookie();
+    await putSettings(cookie, { tg_bot_token: '123456:ABC', tg_chat_id: '42' });
+    const muted = await createNode(cookie, 'tg-muted');
+    await api(`/api/admin/nodes/${muted.node.id}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', cookie, 'CF-Connecting-IP': '10.0.0.1' },
+      body: JSON.stringify({ notify: false }),
+    });
+    await api('/api/v1/report', reportInit(muted.token, { metrics: sample() }));
+    const fetchMock = stubTelegramFetch(() => ({ status: 200, body: '{"ok":true}' }));
+
+    await setLastSeen(muted.node.id, nowSec() - 3600);
+    const counts = await runNotifyScan(env);
+    expect(counts.offline_sent).toBe(0);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(await flagOf(muted.node.id)).toBe(0);
+
+    // Re-enabling alerts resumes them.
+    await api(`/api/admin/nodes/${muted.node.id}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', cookie, 'CF-Connecting-IP': '10.0.0.1' },
+      body: JSON.stringify({ notify: true }),
+    });
+    const resumed = await runNotifyScan(env);
+    expect(resumed.offline_sent).toBe(1);
+    expect(await flagOf(muted.node.id)).toBe(1);
+  });
+
+  it('records the report country from Cloudflare geolocation', async () => {
+    const cookie = await adminCookie();
+    const { node, token } = await createNode(cookie, 'geo-01');
+    const request = new Request(`${BASE}/api/v1/report`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}`, 'CF-Connecting-IP': '203.0.113.42' },
+      body: JSON.stringify({ metrics: sample() }),
+      // `cf` is a Workers-specific RequestInit extension honoured by workerd.
+      cf: { country: 'HK' },
+    } as RequestInit);
+    const res = await SELF.fetch(request);
+    expect(res.status).toBe(200);
+
+    const body = (await (await api('/api/nodes')).json()) as {
+      nodes: Array<{ id: string; country: string; ip: string }>;
+    };
+    const row = body.nodes.find((n) => n.id === node.id);
+    expect(row?.country).toBe('HK');
+    expect(row?.ip).toBe('203.0.113.42');
+  });
 });
 
 describe('static assets fallback', () => {

@@ -91,6 +91,10 @@ export interface NodeSummary {
   traffic_gb: number;
   /** Expiry date as 'YYYY-MM-DD'; '' = none. */
   expires_at: string;
+  /** False = this node is excluded from Telegram offline/recovery alerts. */
+  notify: boolean;
+  /** ISO-3166 alpha-2 country of the last report's source IP; '' = unknown. */
+  country: string;
   // derived helpers computed by the worker
   cpu: number;
   mem_percent: number;

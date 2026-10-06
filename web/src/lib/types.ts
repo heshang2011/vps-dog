@@ -60,6 +60,10 @@ export interface NodeSummary {
   traffic_gb: number;
   /** Expiry date 'YYYY-MM-DD'; '' = none. */
   expires_at: string;
+  /** False = excluded from Telegram offline/recovery alerts. */
+  notify: boolean;
+  /** ISO-3166 alpha-2 country of the source IP; '' = unknown. */
+  country: string;
   /** derived helpers computed by the worker */
   cpu: number;
   mem_percent: number;
@@ -194,6 +198,7 @@ export interface CreateNodeInput {
   price?: string;
   traffic_gb?: number;
   expires_at?: string;
+  notify?: boolean;
 }
 
 export interface UpdateNodeInput {
@@ -206,6 +211,7 @@ export interface UpdateNodeInput {
   price?: string;
   traffic_gb?: number;
   expires_at?: string;
+  notify?: boolean;
 }
 
 export interface CreateNodeResponse {

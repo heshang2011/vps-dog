@@ -229,6 +229,10 @@ export interface ConfirmState {
   confirmLabel: string;
   danger: boolean;
   onConfirm: () => void;
+  /** Optional copyable command block shown under the message (e.g. the agent
+   *  uninstall one-liner when deleting a node). */
+  code?: { label: string; text: string; hint?: string };
+  codeLabel?: string;
 }
 
 export interface ConfirmDialogProps {
@@ -239,12 +243,28 @@ export interface ConfirmDialogProps {
 }
 
 export function ConfirmDialog({ state, cancelLabel, loading, onCancel }: ConfirmDialogProps): ReactNode {
+  const { t } = useI18n();
+  const toast = useToast();
+  const [copied, setCopied] = useState(false);
+
+  const copyCode = async () => {
+    if (state?.code === undefined) return;
+    const ok = await copyText(state.code.text);
+    if (!ok) {
+      toast.error(t('common.copyFailed'));
+      return;
+    }
+    setCopied(true);
+    toast.success(t('toast.copied'));
+    window.setTimeout(() => setCopied(false), 2_000);
+  };
+
   return (
     <Modal
       open={state !== null}
       title={state?.title ?? ''}
       onClose={onCancel}
-      size="sm"
+      size="md"
       footer={
         <>
           <Button variant="ghost" onClick={onCancel} disabled={loading}>
@@ -260,7 +280,27 @@ export function ConfirmDialog({ state, cancelLabel, loading, onCancel }: Confirm
         </>
       }
     >
-      <p className="text-sm leading-relaxed text-muted">{state?.message ?? ''}</p>
+      <div className="flex flex-col gap-3">
+        <p className="text-sm leading-relaxed text-muted">{state?.message ?? ''}</p>
+        {state?.code !== undefined ? (
+          <section className="flex flex-col gap-1.5 rounded-xl border border-border bg-surface-2/50 p-3">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[11px] font-medium tracking-wide text-muted uppercase">
+                {state.code.label}
+              </span>
+              <Button size="sm" variant="ghost" icon={COPY_ICON} onClick={() => void copyCode()}>
+                {copied ? t('common.copied') : t('common.copy')}
+              </Button>
+            </div>
+            <pre className="max-h-32 overflow-auto rounded-lg border border-border bg-surface px-3 py-2 font-mono text-[11px] leading-relaxed break-all whitespace-pre-wrap text-text select-all">
+              {state.code.text}
+            </pre>
+            {state.code.hint !== undefined ? (
+              <p className="text-[11px] leading-relaxed text-muted">{state.code.hint}</p>
+            ) : null}
+          </section>
+        ) : null}
+      </div>
     </Modal>
   );
 }

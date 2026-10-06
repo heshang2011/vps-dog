@@ -56,6 +56,10 @@ export interface NodeRow {
   price: string;
   traffic_gb: number;
   expires_at: string;
+  /** 0 = excluded from Telegram offline/recovery alerts. */
+  notify: number;
+  /** ISO country code of the last report's source IP; '' = unknown. */
+  country: string;
 }
 
 export interface PingTaskRow {
@@ -338,6 +342,8 @@ export function mapNodeSummary(row: NodeRow, offlineAfter: number, now: number):
     price: str(row.price),
     traffic_gb: Math.trunc(num(row.traffic_gb)),
     expires_at: str(row.expires_at),
+    notify: num(row.notify, 1) !== 0,
+    country: str(row.country),
     cpu: sample ? sample.cpu : 0,
     mem_percent: sample ? percent(sample.mem_used, sample.mem_total) : 0,
     disk_percent: sample ? percent(sample.disk_used, sample.disk_total) : 0,
@@ -386,6 +392,7 @@ export interface CreateNodeInput {
   price?: string;
   trafficGb?: number;
   expiresAt?: string;
+  notify?: boolean;
 }
 
 export async function createNode(db: D1Database, input: CreateNodeInput): Promise<NodeRow> {
@@ -395,8 +402,8 @@ export async function createNode(db: D1Database, input: CreateNodeInput): Promis
     .prepare(
       `INSERT INTO nodes
          (id, name, token_hash, token_hint, group_name, region, tags, hidden, sort_order,
-          created_at, updated_at, last_seen, latest, price, traffic_gb, expires_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?)`,
+          created_at, updated_at, last_seen, latest, price, traffic_gb, expires_at, notify)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?, ?)`,
     )
     .bind(
       id,
@@ -413,6 +420,7 @@ export async function createNode(db: D1Database, input: CreateNodeInput): Promis
       coercePrice(input.price ?? ''),
       clampInt(input.trafficGb ?? 0, 0, 1_000_000, 0),
       coerceExpiresAt(input.expiresAt ?? ''),
+      input.notify === false ? 0 : 1,
     )
     .run();
   const row = await getNode(db, id);
@@ -464,6 +472,10 @@ export async function updateNode(
     sets.push('expires_at = ?');
     binds.push(coerceExpiresAt(patch.expires_at));
   }
+  if ('notify' in patch) {
+    sets.push('notify = ?');
+    binds.push(bool(patch.notify, true) ? 1 : 0);
+  }
   if (sets.length === 0) return getNode(db, id);
   sets.push('updated_at = ?');
   binds.push(nowSec());
@@ -473,15 +485,19 @@ export async function updateNode(
 }
 
 /**
- * Record the source address a node last reported from.
+ * Record the source address (and its country, from Cloudflare's request
+ * geolocation) a node last reported from.
  *
- * Deliberately not folded into `updateNode`: the IP is owned by the ingest
- * path (it reflects where reports actually come from), so it must not be
- * settable through the admin PATCH endpoint — a manual value would be silently
- * overwritten by the next report.
+ * Deliberately not folded into `updateNode`: the IP and its country are owned
+ * by the ingest path (they reflect where reports actually come from), so they
+ * must not be settable through the admin PATCH endpoint — a manual value would
+ * be silently overwritten by the next report.
  */
-export async function setNodeIp(db: D1Database, id: string, ip: string): Promise<void> {
-  await db.prepare('UPDATE nodes SET ip = ? WHERE id = ?').bind(ip, id).run();
+export async function setNodeSource(db: D1Database, id: string, ip: string, country: string): Promise<void> {
+  await db
+    .prepare('UPDATE nodes SET ip = ?, country = ? WHERE id = ?')
+    .bind(ip, country, id)
+    .run();
 }
 
 export async function deleteNode(db: D1Database, id: string): Promise<void> {  await db.batch([

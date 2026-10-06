@@ -12,6 +12,7 @@ import { useToast } from '../../components/Toast';
 import { adminApi, errorMessage, qk } from '../../lib/api';
 import { daysUntil, quota, relativeTime } from '../../lib/format';
 import { useI18n } from '../../lib/i18n';
+import { buildUninstallCommand } from '../../lib/install';
 import { useNow } from '../../lib/useLive';
 import type { AdminNode } from '../../lib/types';
 import { ConfirmDialog, TokenDialog, type ConfirmState } from './AdminDialogs';
@@ -27,6 +28,7 @@ interface NodeFormState {
   price: string;
   traffic_gb: string;
   expires_at: string;
+  notify: boolean;
 }
 
 const EMPTY_FORM: NodeFormState = {
@@ -39,6 +41,7 @@ const EMPTY_FORM: NodeFormState = {
   price: '',
   traffic_gb: '',
   expires_at: '',
+  notify: true,
 };
 
 function parseTags(value: string): string[] {
@@ -59,6 +62,7 @@ function toForm(node: AdminNode): NodeFormState {
     price: node.price,
     traffic_gb: node.traffic_gb > 0 ? String(node.traffic_gb) : '',
     expires_at: node.expires_at,
+    notify: node.notify,
   };
 }
 
@@ -68,6 +72,7 @@ function planPayload(form: NodeFormState) {
     price: form.price.trim(),
     traffic_gb: Number.parseInt(form.traffic_gb, 10) || 0,
     expires_at: form.expires_at,
+    notify: form.notify,
   };
 }
 
@@ -401,6 +406,11 @@ export default function AdminNodes(): ReactNode {
                   confirmLabel: t('common.delete'),
                   danger: true,
                   onConfirm: () => deleteMutation.mutate(node.id),
+                  code: {
+                    label: t('admin.nodes.deleteAgent'),
+                    text: buildUninstallCommand(),
+                    hint: t('admin.nodes.deleteAgentHint'),
+                  },
                 })
               }
             >
@@ -543,6 +553,12 @@ export default function AdminNodes(): ReactNode {
             label={t('admin.nodes.hidden')}
             checked={form.hidden}
             onChange={(event) => setForm((current) => ({ ...current, hidden: event.target.checked }))}
+          />
+          <Checkbox
+            label={t('admin.nodes.notify')}
+            hint={t('admin.nodes.notifyHint')}
+            checked={form.notify}
+            onChange={(event) => setForm((current) => ({ ...current, notify: event.target.checked }))}
           />
           {formError !== null ? <FormError message={formError} /> : null}
         </form>

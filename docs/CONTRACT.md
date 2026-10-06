@@ -100,7 +100,9 @@ CREATE TABLE IF NOT EXISTS nodes (
   host_info   TEXT,                      -- JSON {cpu_model, cpu_cores} | NULL (§4.1)
   price       TEXT NOT NULL DEFAULT '',  -- operator-set display text ('' = unset)
   traffic_gb  INTEGER NOT NULL DEFAULT 0,-- monthly quota in GB; 0 = unlimited
-  expires_at  TEXT NOT NULL DEFAULT ''   -- ISO date 'YYYY-MM-DD'; '' = none
+  expires_at  TEXT NOT NULL DEFAULT '',  -- ISO date 'YYYY-MM-DD'; '' = none
+  notify      INTEGER NOT NULL DEFAULT 1,-- 0 = excluded from Telegram alerts (§4.4.1)
+  country     TEXT NOT NULL DEFAULT ''   -- ISO-3166 alpha-2 of source IP (§4.1)
 );
 CREATE INDEX IF NOT EXISTS idx_nodes_sort ON nodes(sort_order, created_at);
 
@@ -252,6 +254,8 @@ interface NodeSummary {
   price: string;        // operator-set display text; '' = unset (§4.4)
   traffic_gb: number;   // monthly quota in GB; 0 = unlimited
   expires_at: string;   // 'YYYY-MM-DD'; '' = none
+  notify: boolean;      // false = excluded from Telegram alerts (§4.4.1)
+  country: string;      // ISO-3166 alpha-2 of the source IP; '' = unknown (§4.1)
   // derived helpers computed by the worker
   cpu: number;
   mem_percent: number;
@@ -462,6 +466,10 @@ Windows 读 CIM/注册表，macOS/BSD 读 `sysctl`），采不到就省略。
   状态，**不是**在线标志的副本）对比：
   `离线待报 = last_seen > 0 且离线且 notified_offline = 0`；
   `恢复待报 = 在线且 notified_offline = 1`。从未上报过的节点（`last_seen = 0`）保持沉默。
+- **节点级开关。** `nodes.notify = 0`（迁移 `0006`，管理端勾选）的节点完全跳过扫描；
+  全局 `tg_*` 设置仍然优先。
+- **来源国别。** 每次上报从 Cloudflare 的 `request.cf.country`（免费）记录
+  `nodes.country`，供仪表盘显示国旗，不做任何外部 GeoIP 查询。
 - **去重与重试。** 每次离线只发一条、每次恢复只发一条；发送失败时标志不变，
   下一个 tick 重试。恢复通知关闭时恢复仍会清零标志，否则过期的标志会吞掉下一次离线告警。
 - **消息格式。** Telegram `parse_mode=HTML`，站点名 / 节点名 / 分组 / IP 均经过转义。

@@ -14,7 +14,7 @@ import {
   insertMetric,
   insertPingRecord,
   listPingTasks,
-  setNodeIp,
+  setNodeSource,
   updateNode,
 } from '../db';
 import type { AppEnv, MetricSample } from '../types';
@@ -129,9 +129,14 @@ agentRoutes.post('/report', async (c) => {
   // The agent dials out from the monitored host, so the request's source
   // address is that host's public address. Recording it here means the
   // dashboard can show an IP without any agent change or re-install.
+  // Cloudflare geolocates the source IP for free on every request
+  // (`request.cf.country`, ISO-3166 alpha-2) — recorded alongside for the
+  // dashboard's flag display, no external GeoIP service involved.
   const sourceIp = clientIp(c.req.raw);
-  if (sourceIp !== 'unknown' && sourceIp !== str(node.ip)) {
-    await setNodeIp(db, node.id, sourceIp);
+  const cf = (c.req.raw as Request & { cf?: Record<string, unknown> }).cf;
+  const country = typeof cf?.country === 'string' ? cf.country.toUpperCase() : '';
+  if (sourceIp !== 'unknown' && (sourceIp !== str(node.ip) || country !== str(node.country))) {
+    await setNodeSource(db, node.id, sourceIp, country);
   }
 
   const host = body.host && typeof body.host === 'object' && !Array.isArray(body.host)

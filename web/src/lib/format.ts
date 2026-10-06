@@ -246,3 +246,13 @@ export function daysUntil(dateStr: string, nowMs: number): number {
   if (Number.isNaN(end)) return 0;
   return Math.ceil((end - nowMs) / 86_400_000);
 }
+
+/**
+ * Flag emoji for an ISO-3166 alpha-2 code ("HK" → 🇭🇰); '' when not a code.
+ * Regional-indicator codepoints only — no emoji font table needed.
+ */
+export function countryFlag(code: string): string {
+  const c = code.trim().toUpperCase();
+  if (!/^[A-Z]{2}$/.test(c)) return '';
+  return String.fromCodePoint(...[...c].map((ch) => 0x1f1e6 + ch.charCodeAt(0) - 65));
+}
