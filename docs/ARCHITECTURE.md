@@ -14,7 +14,8 @@
 
 - 高分辨率指标的长期保留（D1 不是时间序列数据库）。
 - 容器／进程级的内省（那是 Netdata 和 Beszel 的职责）。
-- 告警流水线（webhook／Telegram）—— 是自然的下一步，但不属于 v1。
+- 通用告警流水线（规则引擎、多通道 webhook）—— Telegram 离线通知已内置
+  （见下文），更复杂的场景仍是扩展点，不属于核心。
 
 ## 组件图
 
@@ -119,6 +120,7 @@ hours  > 6   → step = ceil(hours * 3600 / 360)
 1. `DELETE FROM metrics WHERE ts < now - retention_days*86400`
 2. `DELETE FROM ping_records WHERE ts < now - ping_retention_days*86400`
 3. `DELETE FROM sessions WHERE expires_at < now`
+4. **Telegram 通知扫描**（`notify.ts` 的 `runNotifyScan()`，见下文）
 
 这里刻意**没有**「标记离线」这一步。节点的在线状态在读取时由 `last_seen`
 推导（`db.ts` 中的 `isOnline()`），因此存储一个标志位会造出第二个事实来源，
@@ -127,6 +129,23 @@ API 响应中的 `online` 字段始终是计算出来的，从不从某一列读
 
 删除操作分批执行，因为 D1 拒绝绑定参数超过 100 个的语句。
 同一段代码通过 `POST /api/admin/sweep` 暴露，用于手动执行与测试。
+
+## Telegram 通知
+
+在线状态从不落库（§7），但**通知**需要一个跨 tick 的事实：这条离线告警
+发出过没有？`nodes.notified_offline`（迁移 `0003_telegram.sql`）就是这个
+发送状态——它不是在线标志的第二份拷贝，而是「管理员已被知会」的记录：
+
+- `离线待报 = last_seen > 0 且离线且 notified_offline = 0` → 发送 🔴，置 1。
+- `恢复待报 = 在线且 notified_offline = 1` → 发送 🟢，置 0（即使恢复通知
+  已关闭也清零，否则过期的标志会吞掉下一次离线告警）。
+- 发送失败时标志不变，下一个 tick（5 分钟后）重试；Telegram 打烊不会
+  永久吞掉一条告警，只会推迟它。
+- 从未上报过的节点（`last_seen = 0`）永远沉默——「没见过」不等于「离线」。
+
+扫描放在清理任务之后、同一个 cron 里；通知未配置或两种事件都关闭时，
+一次 `getSettings` 读取即返回。`POST /api/admin/notify/test` 走同一条
+发送路径，供设置页验证配置。
 
 ## 安全模型
 
@@ -170,8 +189,10 @@ JS 与 CSS 请求只花费一次内部 fetch，且不产生 D1 查询。
 
 ## 扩展点
 
-- **告警。** `scheduled()` 已经在清理离线节点 —— 在那里挂一个 webhook 或
-  Telegram 机器人即可。
+- **更多告警通道。** Telegram 的发送与状态转换检测都在 `notify.ts`，与
+  cron 的耦合只有一个函数调用；加 webhook / Slack / 邮件通道时把
+  `sendTelegramMessage` 换成通道列表即可。基于阈值的告警（CPU 超载等）
+  需要另一套待报状态，可仿照 `notified_offline` 的做法。
 - **更多采集项。** 给 `MetricSample` 加一个字段，给 `metrics` 加一列，给
   `MetricSeries` 加一条序列。降采样表是另一处需要改动的地方。
 - **状态页。** `/api/status` 与 `/api/nodes` 无需认证；任何地方的静态页面

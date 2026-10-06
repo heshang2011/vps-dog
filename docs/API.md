@@ -259,7 +259,25 @@ curl -X POST https://vps-dog.example.workers.dev/api/admin/nodes/0f2c…/token -
 
 键：`site_name`, `site_description`, `report_interval`, `offline_after`,
 `retention_days`, `ping_retention_days`, `theme`, `custom_head`,
-`allow_auto_register`。
+`allow_auto_register`, `tg_bot_token`, `tg_chat_id`, `tg_notify_offline`,
+`tg_notify_online`。
+
+Telegram 通知：`tg_bot_token` 与 `tg_chat_id` 都非空时启用，节点离线 /
+恢复时由定时任务（每 5 分钟）推送消息；`tg_notify_offline` /
+`tg_notify_online` 分别控制两种事件，默认开 / 关。
+
+### 通知测试
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `POST` | `/api/admin/notify/test` | 用已保存的 Telegram 配置发送一条测试消息 |
+
+```bash
+curl -X POST https://vps-dog.example.workers.dev/api/admin/notify/test -b "vpsdog_session=$SID"
+# { "ok": true, "sent": true }
+```
+
+> 未配置 `tg_bot_token` / `tg_chat_id` 时返回 400；Telegram API 拒绝消息或不可达时返回 502（`error: telegram_error`）。
 
 ### 用户
 

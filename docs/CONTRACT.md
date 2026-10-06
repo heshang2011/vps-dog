@@ -94,7 +94,13 @@ CREATE TABLE IF NOT EXISTS nodes (
   -- denormalised latest state (keeps the dashboard to a single query)
   last_seen   INTEGER NOT NULL DEFAULT 0,
   latest      TEXT,                      -- JSON MetricSample | NULL
-  ip          TEXT NOT NULL DEFAULT ''   -- source address of the last report (§4.1)
+  ip          TEXT NOT NULL DEFAULT '',  -- source address of the last report (§4.1)
+  -- later migrations (0002–0005), listed here for the full picture:
+  notified_offline INTEGER NOT NULL DEFAULT 0, -- notifier send-state, NOT an online flag
+  host_info   TEXT,                      -- JSON {cpu_model, cpu_cores} | NULL (§4.1)
+  price       TEXT NOT NULL DEFAULT '',  -- operator-set display text ('' = unset)
+  traffic_gb  INTEGER NOT NULL DEFAULT 0,-- monthly quota in GB; 0 = unlimited
+  expires_at  TEXT NOT NULL DEFAULT ''   -- ISO date 'YYYY-MM-DD'; '' = none
 );
 CREATE INDEX IF NOT EXISTS idx_nodes_sort ON nodes(sort_order, created_at);
 
@@ -194,6 +200,10 @@ CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_logs(ts);
 | `theme`             | `auto`       | `auto` \| `light` \| `dark`                        |
 | `custom_head`       | `""`         | 注入到 SPA 外壳 `</head>` 之前的原始 HTML            |
 | `allow_auto_register`| `false`     | 未知 Agent 令牌上报时是否创建节点                    |
+| `tg_bot_token`      | `""`         | Telegram Bot Token（@BotFather 签发）；与 `tg_chat_id` 任一为空即关闭通知 |
+| `tg_chat_id`        | `""`         | 接收通知的用户 / 群组 / 频道 ID                     |
+| `tg_notify_offline` | `true`       | 节点离线时发送 Telegram 通知                        |
+| `tg_notify_online`  | `false`      | 节点恢复上线时发送 Telegram 通知                    |
 
 设置通过 `getSettings(db)` 读取，返回一个已完整填充的对象
 （默认值已合并）。写入时未知键会被忽略。
@@ -238,6 +248,10 @@ interface NodeSummary {
   uptime: number;       // seconds
   created_at: number;
   metrics: MetricSample | null;
+  host: { cpu_model: string; cpu_cores: number } | null;  // hardware identity (§4.1)
+  price: string;        // operator-set display text; '' = unset (§4.4)
+  traffic_gb: number;   // monthly quota in GB; 0 = unlimited
+  expires_at: string;   // 'YYYY-MM-DD'; '' = none
   // derived helpers computed by the worker
   cpu: number;
   mem_percent: number;
@@ -324,7 +338,9 @@ interface MetricSeries {
   "host": {                        // optional, captured once and stored in tags/region
     "os": "Ubuntu 24.04",
     "arch": "x86_64",
-    "region": "HK"
+    "region": "HK",
+    "cpu_model": "AMD EPYC 7K62 48-Core Processor",  // optional hardware identity
+    "cpu_cores": 4                                     // logical cores
   },
   "metrics": { /* MetricSample */ },   // required
   "pings": [                            // optional
@@ -345,6 +361,12 @@ interface MetricSeries {
 地址变化时会覆盖旧值；取不到地址时保持原值不动。
 该字段由摄取路径独占写入，**不接受** `PATCH /api/admin/nodes/:id` 修改 ——
 手工设的值会被下一次上报静默覆盖。
+
+`host.cpu_model` / `host.cpu_cores` 同样由摄取路径写入
+（`nodes.host_info`，迁移 `0004_host_info.sql`），经校验后随
+`NodeSummary.host` 下发（`{cpu_model, cpu_cores}`，`null` 表示尚未上报）。
+缺失字段不会清除旧值；Agent 各平台尽力采集（Linux 读 `/proc/cpuinfo`，
+Windows 读 CIM/注册表，macOS/BSD 读 `sysctl`），采不到就省略。
 
 `200` 响应：
 
@@ -412,8 +434,8 @@ interface MetricSeries {
 | Method | Path                             | Purpose                                              |
 | ------ | -------------------------------- | ---------------------------------------------------- |
 | GET    | `/api/admin/nodes`               | 所有节点（含隐藏节点），外加 `token_hint`             |
-| POST   | `/api/admin/nodes`               | 创建节点 → `{node, token}`（**明文令牌仅返回一次**）  |
-| PATCH  | `/api/admin/nodes/:id`           | 更新 `name/group/region/tags/hidden/sort_order`      |
+| POST   | `/api/admin/nodes`               | 创建节点 → `{node, token}`（**明文令牌仅返回一次**）；可选 `price/traffic_gb/expires_at` |
+| PATCH  | `/api/admin/nodes/:id`           | 更新 `name/group/region/tags/hidden/sort_order/price/traffic_gb/expires_at` |
 | DELETE | `/api/admin/nodes/:id`           | 删除节点及其指标 / 探测数据                           |
 | POST   | `/api/admin/nodes/:id/token`     | 轮换令牌 → `{token}`                                 |
 | GET    | `/api/admin/pings?node_id=`      | 列出探测任务                                          |
@@ -427,8 +449,22 @@ interface MetricSeries {
 | DELETE | `/api/admin/users/:id`           | 删除（不能删除最后一个管理员 / 自己）                 |
 | GET    | `/api/admin/audit?limit=100`     | 最近的审计记录行                                      |
 | GET    | `/api/admin/overview`            | `{nodes, online, offline, metrics_rows, oldest_ts, d1_size}` |
+| POST   | `/api/admin/notify/test`         | 用已配置的 Telegram Bot 发一条测试消息；未配置 → 400，发送失败 → 502 |
 
 每次变更类管理调用都会写入一行 `audit_logs`。
+
+### 4.4.1 Telegram 通知
+
+定时触发器（`*/5 * * * *`）在保留期清理之后运行通知扫描（`runNotifyScan`）：
+
+- **状态转换检测。** 节点的在线状态在扫描时根据 `last_seen` 推导，与
+  `nodes.notified_offline`（迁移 `0003_telegram.sql`，通知器的「已告知管理员」
+  状态，**不是**在线标志的副本）对比：
+  `离线待报 = last_seen > 0 且离线且 notified_offline = 0`；
+  `恢复待报 = 在线且 notified_offline = 1`。从未上报过的节点（`last_seen = 0`）保持沉默。
+- **去重与重试。** 每次离线只发一条、每次恢复只发一条；发送失败时标志不变，
+  下一个 tick 重试。恢复通知关闭时恢复仍会清零标志，否则过期的标志会吞掉下一次离线告警。
+- **消息格式。** Telegram `parse_mode=HTML`，站点名 / 节点名 / 分组 / IP 均经过转义。
 
 ### 4.5 静态资源
 
