@@ -116,26 +116,22 @@ function MetricTile({
     );
   }
   return (
-    // Bar mode, three stacked rows: icon+label, the big value, then the detail
-    // lines, with the bar pinned to the bottom.
-    <div className={`flex h-full flex-col gap-1.5 p-3.5 ${TILE}`}>
-      <div className="flex items-center gap-2">
+    // Bar mode: one wide row per metric — icon, label and the detail line on
+    // the left, the big value right-aligned, the bar spanning underneath.
+    <div className={`flex h-full flex-col justify-center gap-2 p-3.5 ${TILE}`}>
+      <div className="flex min-w-0 items-center gap-2.5">
         <span className="flex size-6 shrink-0 items-center justify-center rounded-lg bg-success/12 text-success">
           {icon}
         </span>
-        <span className="min-w-0 truncate text-[11px] text-muted">{label}</span>
+        <span className="shrink-0 text-[11px] text-muted">{label}</span>
+        {hints.length > 0 ? (
+          <span className="num min-w-0 truncate text-[11px] text-muted/85" title={hints.join(' · ')}>
+            {hints.join(' · ')}
+          </span>
+        ) : null}
+        <span className="num ml-auto shrink-0 text-xl leading-none font-semibold text-text">{value}</span>
       </div>
-      <span className="num text-xl leading-tight font-semibold text-text">{value}</span>
-      {hints.length > 0 ? (
-        <span className="mt-auto flex flex-col gap-0.5">
-          {hints.map((line) => (
-            <span key={line} className="num truncate text-[11px] text-muted/85" title={line}>
-              {line}
-            </span>
-          ))}
-        </span>
-      ) : null}
-      <ProgressBar value={percent} showValue={false} className={hints.length === 0 ? 'mt-auto' : ''} />
+      <ProgressBar value={percent} showValue={false} />
     </div>
   );
 }
@@ -444,7 +440,13 @@ export function NodeCard({ node, meterStyle, defaultExpanded = true }: NodeCardP
                 shorter than the chart / donut beside it; the rate row keeps
                 its natural (compact) height. */}
             <div className="flex flex-col gap-2.5">
-              <div className="grid flex-1 grid-cols-3 gap-2.5">
+              {/* Bar mode stacks the three metrics vertically (each a wide
+                  row); ring mode keeps them side by side. */}
+              <div
+                className={`grid flex-1 gap-2.5 ${
+                  meterStyle === 'bar' ? 'grid-cols-1' : 'grid-cols-3'
+                }`}
+              >
                 <MetricTile
                   mode={meterStyle}
                   icon={<IconCpu className="size-4" />}
