@@ -378,42 +378,42 @@ describe('admin node CRUD', () => {
     const cookie = await adminCookie();
     const { node, token } = await createNode(cookie, 'month-01');
 
-    // First report: no baseline to diff against, so the month starts at 0.
+    // First report on a brand-new node seeds the month from the since-boot
+    // counters (they cover exactly this node's lifetime).
     await api('/api/v1/report', reportInit(token, { metrics: sample({ net_in: 1000, net_out: 500 }) }));
     let row = await monthTraffic(node.id);
-    expect(row?.traffic_month_in).toBe(0);
-    expect(row?.traffic_month_out).toBe(0);
+    expect(row?.traffic_month_in).toBe(1000);
+    expect(row?.traffic_month_out).toBe(500);
 
-    // Second report: the positive delta is folded in.
+    // Later reports fold in the positive delta on top.
     await api('/api/v1/report', reportInit(token, { metrics: sample({ net_in: 3000, net_out: 1500 }) }));
-    row = await monthTraffic(node.id);
-    expect(row?.traffic_month_in).toBe(2000);
-    expect(row?.traffic_month_out).toBe(1000);
-
-    // Third report: accumulates on top.
-    await api('/api/v1/report', reportInit(token, { metrics: sample({ net_in: 4000, net_out: 2000 }) }));
     row = await monthTraffic(node.id);
     expect(row?.traffic_month_in).toBe(3000);
     expect(row?.traffic_month_out).toBe(1500);
+
+    await api('/api/v1/report', reportInit(token, { metrics: sample({ net_in: 4000, net_out: 2000 }) }));
+    row = await monthTraffic(node.id);
+    expect(row?.traffic_month_in).toBe(4000);
+    expect(row?.traffic_month_out).toBe(2000);
 
     // A host reboot resets the agent counters to 0: the delta must not go
     // negative, and the month total must not be corrupted.
     await api('/api/v1/report', reportInit(token, { metrics: sample({ net_in: 10, net_out: 5 }) }));
     row = await monthTraffic(node.id);
-    expect(row?.traffic_month_in).toBe(3000);
-    expect(row?.traffic_month_out).toBe(1500);
+    expect(row?.traffic_month_in).toBe(4000);
+    expect(row?.traffic_month_out).toBe(2000);
 
     // Growth resumes from the new baseline.
     await api('/api/v1/report', reportInit(token, { metrics: sample({ net_in: 510, net_out: 205 }) }));
     row = await monthTraffic(node.id);
-    expect(row?.traffic_month_in).toBe(3500);
-    expect(row?.traffic_month_out).toBe(1700);
+    expect(row?.traffic_month_in).toBe(4500);
+    expect(row?.traffic_month_out).toBe(2200);
 
     // The public DTO carries the counters for the dashboard's remaining-traffic cell.
     const pub = (await (await api('/api/nodes')).json()) as { nodes: Array<Record<string, unknown>> };
     const pubRow = pub.nodes.find((n) => n.id === node.id);
-    expect(pubRow?.traffic_month_in).toBe(3500);
-    expect(pubRow?.traffic_month_out).toBe(1700);
+    expect(pubRow?.traffic_month_in).toBe(4500);
+    expect(pubRow?.traffic_month_out).toBe(2200);
   });
 
   it('resets the month counters when a new month starts', async () => {
@@ -422,7 +422,7 @@ describe('admin node CRUD', () => {
     await api('/api/v1/report', reportInit(token, { metrics: sample({ net_in: 1000, net_out: 500 }) }));
     await api('/api/v1/report', reportInit(token, { metrics: sample({ net_in: 5000, net_out: 2500 }) }));
     let row = await monthTraffic(node.id);
-    expect(row?.traffic_month_in).toBe(4000);
+    expect(row?.traffic_month_in).toBe(5000);
 
     // Pretend the stored counters belong to a past month.
     await env.DB.prepare("UPDATE nodes SET traffic_month = '2020-01' WHERE id = ?").bind(node.id).run();
@@ -432,6 +432,33 @@ describe('admin node CRUD', () => {
     expect(row?.traffic_month_in).toBe(1000);
     expect(row?.traffic_month_out).toBe(500);
     expect(row?.traffic_month).toBe(new Date().toISOString().slice(0, 7));
+  });
+
+  it('seeds the month from the counters on a node\'s first-ever report', async () => {
+    const cookie = await adminCookie();
+    const { node, token } = await createNode(cookie, 'month-seed');
+    // Brand-new node: its since-boot counters cover exactly its own lifetime,
+    // so the first report seeds the month instead of starting at zero.
+    await api('/api/v1/report', reportInit(token, { metrics: sample({ net_in: 8_000_000_000, net_out: 5_000_000_000 }) }));
+    const row = await monthTraffic(node.id);
+    expect(row?.traffic_month_in).toBe(8_000_000_000);
+    expect(row?.traffic_month_out).toBe(5_000_000_000);
+  });
+
+  it('does not seed an established node when its month rolls over', async () => {
+    const cookie = await adminCookie();
+    const { node, token } = await createNode(cookie, 'month-old');
+    // Node has been reporting for a while: the month rollover must NOT seed
+    // with since-boot counters, which cover an unknown window.
+    await api('/api/v1/report', reportInit(token, { metrics: sample({ net_in: 1000, net_out: 500 }) }));
+    await api('/api/v1/report', reportInit(token, { metrics: sample({ net_in: 9000, net_out: 6000 }) }));
+    await env.DB.prepare("UPDATE nodes SET traffic_month = '2020-01' WHERE id = ?").bind(node.id).run();
+
+    await api('/api/v1/report', reportInit(token, { metrics: sample({ net_in: 12_000, net_out: 8000 }) }));
+    const row = await monthTraffic(node.id);
+    // Fresh month starts at 0 and picks up only this report's delta.
+    expect(row?.traffic_month_in).toBe(3000);
+    expect(row?.traffic_month_out).toBe(2000);
   });
 
   it('deletes a node together with its metrics and pings', async () => {

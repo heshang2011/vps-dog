@@ -349,15 +349,30 @@ export interface MonthTraffic {
 export function accumulateMonthTraffic(
   prev: MetricSample | null,
   next: MetricSample,
-  row: Pick<NodeRow, 'traffic_month' | 'traffic_month_in' | 'traffic_month_out'>,
+  row: Pick<NodeRow, 'traffic_month' | 'traffic_month_in' | 'traffic_month_out' | 'last_seen'>,
   now: number,
 ): MonthTraffic {
   const month = monthKey(now);
   const sameMonth = str(row.traffic_month) === month;
-  const baseIn = sameMonth ? num(row.traffic_month_in) : 0;
-  const baseOut = sameMonth ? num(row.traffic_month_out) : 0;
   const deltaIn = prev !== null ? Math.max(0, next.net_in - prev.net_in) : 0;
   const deltaOut = prev !== null ? Math.max(0, next.net_out - prev.net_out) : 0;
+  if (!sameMonth) {
+    // A new month (or the first report since this feature shipped). Seed with
+    // the agent's since-boot counters *only* when this is the node's very
+    // first report ever (`last_seen = 0`) — there the counters cover exactly
+    // the node's own lifetime. On an established node they span an unknown
+    // window, so the month starts at zero and only this report's delta counts
+    // (the window it covers straddles the boundary; reports are seconds apart,
+    // so attributing it to the new month loses nothing).
+    const firstEver = num(row.last_seen) === 0;
+    return {
+      month,
+      in: firstEver ? Math.trunc(Math.max(0, next.net_in)) : Math.trunc(deltaIn),
+      out: firstEver ? Math.trunc(Math.max(0, next.net_out)) : Math.trunc(deltaOut),
+    };
+  }
+  const baseIn = num(row.traffic_month_in);
+  const baseOut = num(row.traffic_month_out);
   return { month, in: Math.trunc(baseIn + deltaIn), out: Math.trunc(baseOut + deltaOut) };
 }
 

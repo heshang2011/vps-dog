@@ -3,6 +3,7 @@ import { useEffect, useId, useMemo, useState, type ReactNode } from 'react';
 import { Badge, StatusDot } from './Badge';
 import { Button } from './Button';
 import { Chart, ChartSkeleton, lineSeries } from './Chart';
+import { CountryFlag } from './CountryFlag';
 import { Donut } from './Donut';
 import { type MeterStyle } from './MeterStyleSwitch';
 import { IconBellOff } from './icons';
@@ -26,7 +27,7 @@ import {
   IconRefresh,
   IconUpload,
 } from './icons';
-import { bytes, countryFlag, cssVar, daysUntil, duration, number, quota, rate, ratioPercent, relativeTime, thresholdTone, toneColor } from '../lib/format';
+import { bytes, cssVar, daysUntil, duration, number, quota, rate, ratioPercent, relativeTime, thresholdTone, toneColor } from '../lib/format';
 import { useI18n } from '../lib/i18n';
 import { useNodeMetrics, useNow } from '../lib/useLive';
 import type { MetricPoint, NodeSummary } from '../lib/types';
@@ -393,7 +394,7 @@ export function NodeCard({ node, meterStyle, defaultExpanded = true }: NodeCardP
             className="flex items-center gap-1.5"
             title={node.ip.length > 0 ? `${t('node.ip')} ${node.ip}` : undefined}
           >
-            <span className="text-[13px] leading-none">{countryFlag(node.country)}</span>
+            <CountryFlag code={node.country} className="text-[13px]" />
             <span className="num text-text/85">{node.country}</span>
           </span>
         ) : node.ip.length > 0 ? (

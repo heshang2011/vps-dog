@@ -1,5 +1,15 @@
 @import 'tailwindcss';
 
+/* Country-flag glyphs. Windows ships no regional-indicator glyphs, so flag
+   emoji render as bare letters there; this vendored 78 KB subset supplies
+   exactly those codepoints. Local on purpose — no CDN, works offline. */
+@font-face {
+  font-family: 'Twemoji Country Flags';
+  src: url('./assets/TwemojiCountryFlags.woff2') format('woff2');
+  font-display: swap;
+  unicode-range: U+1F1E6-1F1FF;
+}
+
 /* Tailwind v4 CSS-first configuration. The class strategy keeps working with
    `dark:` utilities because the theme is driven by `.dark` on <html>. */
 @custom-variant dark (&:where(.dark, .dark *));
