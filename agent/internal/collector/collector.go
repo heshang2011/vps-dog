@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 )
@@ -198,14 +199,62 @@ func (c *Collector) Collect() (MetricSample, error) {
 // is only used to decide whether a sample is completely useless.
 const metricSourceCount = 8
 
-// Host returns static host information for the report envelope.
+// Host returns static host information for the report envelope. CPU model and
+// core count are resolved once and cached alongside OS/arch.
 func (c *Collector) Host() Host {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.host.OS == "" {
-		c.host = Host{OS: osName(), Arch: archName()}
+		model := cpuModel()
+		cores := cpuCores()
+		if cores <= 0 {
+			cores = runtime.NumCPU()
+		}
+		c.host = Host{OS: osName(), Arch: archName(), CPUModel: model, CPUCores: cores}
 	}
 	return c.host
+}
+
+// parseCPUInfo extracts the CPU model and logical core count from the text of
+// /proc/cpuinfo. It is a pure function (compiled on every platform) so it can
+// be unit-tested anywhere; only the file read itself is Linux-specific.
+//
+// x86 and most ARM SoCs expose `model name`; some ARM boards only have
+// `Processor`, `Hardware` or `Model Name`. The core count is the number of
+// `processor` entries.
+func parseCPUInfo(content string) (model string, cores int) {
+	fallbackModel := ""
+	for _, line := range strings.Split(content, "\n") {
+		key, val, ok := strings.Cut(line, ":")
+		if !ok {
+			continue
+		}
+		key, val = strings.TrimSpace(key), strings.TrimSpace(val)
+		switch key {
+		case "processor":
+			cores++
+		case "model name", "Model Name", "Processor", "Hardware":
+			if val == "" {
+				continue
+			}
+			switch key {
+			case "model name", "Model Name":
+				// Prefer the descriptive fields; keep the first one seen.
+				if model == "" {
+					model = val
+				}
+			default:
+				// Lower-quality fallbacks; keep the first one seen.
+				if fallbackModel == "" {
+					fallbackModel = val
+				}
+			}
+		}
+	}
+	if model == "" {
+		model = fallbackModel
+	}
+	return model, cores
 }
 
 func clampPercent(v float64) float64 {

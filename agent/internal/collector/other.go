@@ -47,6 +47,9 @@ type platformSnapshot struct {
 	uptime uint64
 	load   [3]float64
 
+	cpuModel string
+	cpuCores int
+
 	osName string
 }
 
@@ -161,6 +164,17 @@ func osName() string {
 	}
 }
 
+// cpuModel returns the CPU model name, "" when unavailable.
+func cpuModel() string {
+	return ensureSnapshot().cpuModel
+}
+
+// cpuCores returns the logical core count, 0 when unavailable
+// (the caller falls back to runtime.NumCPU).
+func cpuCores() int {
+	return ensureSnapshot().cpuCores
+}
+
 // errUnavailable marks a metric source that this platform cannot provide.
 var errUnavailable = &unavailableError{}
 
@@ -270,6 +284,22 @@ if ($uptime -le 0) {
 }
 Emit 'uptime' $uptime
 
+# ── CPU identity: model name and logical core count ──────────────────────
+try {
+  $p = Get-CimInstance Win32_Processor -ErrorAction Stop | Select-Object -First 1
+  if ($p) {
+    Emit 'cpu_model' $p.Name
+    if ([int]$p.NumberOfLogicalProcessors -gt 0) { Emit 'cpu_cores' ([int]$p.NumberOfLogicalProcessors) }
+  }
+} catch {}
+if (-not (Get-Command Get-CimInstance -ErrorAction SilentlyContinue)) {
+  try {
+    $cv = Get-ItemProperty 'HKLM:\HARDWARE\DESCRIPTION\System\CentralProcessor\0' -ErrorAction Stop
+    Emit 'cpu_model' $cv.ProcessorNameString
+  } catch {}
+  try { Emit 'cpu_cores' ([System.Environment]::ProcessorCount) } catch {}
+}
+
 # ── CPU: CIM load percentage, else the processor time counter ─────────────
 $cpu = $null
 try {
@@ -376,6 +406,12 @@ func readWindowsSnapshot() platformSnapshot {
 	if v := strings.TrimSpace(kv["os_name"]); v != "" {
 		s.osName = v
 	}
+	if v := strings.TrimSpace(kv["cpu_model"]); v != "" {
+		s.cpuModel = v
+	}
+	if n := kvUint(kv, "cpu_cores"); n > 0 {
+		s.cpuCores = int(n)
+	}
 	s.mem.MemTotal = kvUint(kv, "mem_total")
 	memFree := kvUint(kv, "mem_free")
 	if memFree <= s.mem.MemTotal {
@@ -416,6 +452,20 @@ func readWindowsSnapshot() platformSnapshot {
 
 func readUnixSnapshot() platformSnapshot {
 	var s platformSnapshot
+
+	// CPU model: machdep.cpu.brand_string on macOS/`most` BSDs; empty when the
+	// OID does not exist (the report just omits the field).
+	if out, err := runCommand(5*time.Second, "sysctl", "-n", "machdep.cpu.brand_string"); err == nil {
+		if m := strings.TrimSpace(out); m != "" {
+			s.cpuModel = m
+		}
+	}
+	// Logical core count.
+	if out, err := runCommand(5*time.Second, "sysctl", "-n", "hw.ncpu"); err == nil {
+		if n, err := strconv.Atoi(strings.TrimSpace(out)); err == nil && n > 0 {
+			s.cpuCores = n
+		}
+	}
 
 	// Memory: sysctl hw.memsize (bytes).
 	if out, err := runCommand(5*time.Second, "sysctl", "-n", "hw.memsize"); err == nil {

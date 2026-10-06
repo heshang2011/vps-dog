@@ -299,6 +299,37 @@ func readLoad() (l1, l5, l15 float64, err error) {
 	return l1, l5, l15, nil
 }
 
+// ── /proc/cpuinfo → CPU model and logical core count ─────────────────────
+
+func readCPUInfo() (string, error) {
+	b, err := os.ReadFile("/proc/cpuinfo")
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
+}
+
+// cpuModel returns the CPU model name, "" when unavailable.
+func cpuModel() string {
+	content, err := readCPUInfo()
+	if err != nil {
+		return ""
+	}
+	model, _ := parseCPUInfo(content)
+	return model
+}
+
+// cpuCores returns the logical core count, 0 when /proc/cpuinfo is unreadable
+// (the caller falls back to runtime.NumCPU).
+func cpuCores() int {
+	content, err := readCPUInfo()
+	if err != nil {
+		return 0
+	}
+	_, cores := parseCPUInfo(content)
+	return cores
+}
+
 // osName reports a human-readable distribution name, e.g. "Ubuntu 24.04".
 func osName() string {
 	pretty := parseOSRelease("/etc/os-release")

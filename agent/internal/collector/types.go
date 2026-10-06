@@ -25,8 +25,12 @@ type MetricSample struct {
 }
 
 // Host describes the machine, reported once on first contact (§4.1).
+// CPU model / core count ride along in the same envelope: they are static
+// facts, and the worker stores them into `nodes.host_info`.
 type Host struct {
-	OS     string `json:"os,omitempty"`
-	Arch   string `json:"arch,omitempty"`
-	Region string `json:"region,omitempty"`
+	OS       string `json:"os,omitempty"`
+	Arch     string `json:"arch,omitempty"`
+	Region   string `json:"region,omitempty"`
+	CPUModel string `json:"cpu_model,omitempty"`
+	CPUCores int    `json:"cpu_cores,omitempty"`
 }
