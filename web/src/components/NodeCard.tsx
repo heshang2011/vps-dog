@@ -116,11 +116,13 @@ function MetricTile({
     );
   }
   return (
-    // Bar mode: one wide row per metric — icon, label and the detail line on
-    // the left, the big value right-aligned, the bar spanning underneath.
-    <div className={`flex h-full flex-col justify-center gap-2 p-3.5 ${TILE}`}>
+    // Bar mode: one compact wide row per metric — icon, label and the detail
+    // line on the left, the big value right-aligned, the bar spanning
+    // underneath. Deliberately tight vertically: three stacked rows must not
+    // grow the panel taller than ring mode's single row.
+    <div className={`flex h-full min-h-12 flex-col justify-center gap-1.5 px-3.5 py-2 ${TILE}`}>
       <div className="flex min-w-0 items-center gap-2.5">
-        <span className="flex size-6 shrink-0 items-center justify-center rounded-lg bg-success/12 text-success">
+        <span className="flex size-5 shrink-0 items-center justify-center rounded-md bg-success/12 text-success">
           {icon}
         </span>
         <span className="shrink-0 text-[11px] text-muted">{label}</span>
@@ -129,7 +131,7 @@ function MetricTile({
             {hints.join(' · ')}
           </span>
         ) : null}
-        <span className="num ml-auto shrink-0 text-xl leading-none font-semibold text-text">{value}</span>
+        <span className="num ml-auto shrink-0 text-lg leading-none font-semibold text-text">{value}</span>
       </div>
       <ProgressBar value={percent} showValue={false} />
     </div>
