@@ -461,6 +461,75 @@ describe('admin node CRUD', () => {
     expect(row?.traffic_month_out).toBe(2000);
   });
 
+  it('lets an operator correct the used traffic, and keeps metering on top', async () => {
+    const cookie = await adminCookie();
+    const GiB = 1024 ** 3;
+    const { node, token } = await createNode(cookie, 'used-edit');
+    await api('/api/v1/report', reportInit(token, { metrics: sample({ net_in: 1_000_000, net_out: 500_000 }) }));
+    await api('/api/v1/report', reportInit(token, { metrics: sample({ net_in: 2 * GiB, net_out: 1 * GiB }) }));
+
+    // The agent metered 3 GiB; the operator says the real usage is 100 GB.
+    const patch = await api(`/api/admin/nodes/${node.id}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', cookie, 'CF-Connecting-IP': '10.0.0.1' },
+      body: JSON.stringify({ traffic_used_gb: 100 }),
+    });
+    expect(patch.status).toBe(200);
+    const patched = (await patch.json()) as { node: Record<string, unknown> };
+    expect(patched.node.traffic_used).toBe(100 * GiB);
+    expect(patched.node.traffic_corrected).toBe(true);
+
+    // Later reports accumulate on top of the correction instead of overwriting
+    // it — the reason the correction is stored as an offset, not a value.
+    await api('/api/v1/report', reportInit(token, { metrics: sample({ net_in: 3 * GiB, net_out: 2 * GiB }) }));
+    let pub = (await (await api('/api/nodes')).json()) as { nodes: Array<Record<string, unknown>> };
+    // +2 GiB metered since the correction (in +1, out +1).
+    expect(pub.nodes.find((n) => n.id === node.id)?.traffic_used).toBe(102 * GiB);
+
+    // A second correction rebases onto the metered amount at that moment.
+    await api(`/api/admin/nodes/${node.id}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', cookie, 'CF-Connecting-IP': '10.0.0.1' },
+      body: JSON.stringify({ traffic_used_gb: 10 }),
+    });
+    pub = (await (await api('/api/nodes')).json()) as { nodes: Array<Record<string, unknown>> };
+    expect(pub.nodes.find((n) => n.id === node.id)?.traffic_used).toBe(10 * GiB);
+
+    // Switching to outbound-only metering rebases in the same request.
+    await api(`/api/admin/nodes/${node.id}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', cookie, 'CF-Connecting-IP': '10.0.0.1' },
+      body: JSON.stringify({ traffic_used_gb: 5, traffic_both: false }),
+    });
+    pub = (await (await api('/api/nodes')).json()) as { nodes: Array<Record<string, unknown>> };
+    expect(pub.nodes.find((n) => n.id === node.id)?.traffic_used).toBe(5 * GiB);
+  });
+
+  it('expires a manual correction when the month rolls over', async () => {
+    const cookie = await adminCookie();
+    const GiB = 1024 ** 3;
+    const { node, token } = await createNode(cookie, 'used-roll');
+    await api('/api/v1/report', reportInit(token, { metrics: sample({ net_in: 1000, net_out: 500 }) }));
+    await api(`/api/admin/nodes/${node.id}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', cookie, 'CF-Connecting-IP': '10.0.0.1' },
+      body: JSON.stringify({ traffic_used_gb: 50 }),
+    });
+    let pub = (await (await api('/api/nodes')).json()) as { nodes: Array<Record<string, unknown>> };
+    expect(pub.nodes.find((n) => n.id === node.id)?.traffic_used).toBe(50 * GiB);
+
+    // Force the correction (and the counters) into a past month.
+    await env.DB
+      .prepare("UPDATE nodes SET traffic_offset_month = '2020-01', traffic_month = '2020-01' WHERE id = ?")
+      .bind(node.id)
+      .run();
+    pub = (await (await api('/api/nodes')).json()) as { nodes: Array<Record<string, unknown>> };
+    const row = pub.nodes.find((n) => n.id === node.id);
+    // The stale correction no longer applies to the new month.
+    expect(row?.traffic_used).toBe(0);
+    expect(row?.traffic_corrected).toBe(false);
+  });
+
   it('deletes a node together with its metrics and pings', async () => {
     const cookie = await adminCookie();
     const { node, token } = await createNode(cookie, 'del-01');

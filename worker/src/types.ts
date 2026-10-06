@@ -94,6 +94,10 @@ export interface NodeSummary {
   /** Bytes this node has moved since the start of the current month. */
   traffic_month_in: number;
   traffic_month_out: number;
+  /** Usage the quota meters this month, including any manual correction. */
+  traffic_used: number;
+  /** True when an operator's manual correction is currently in effect. */
+  traffic_corrected: boolean;
   /** Expiry date as 'YYYY-MM-DD'; '' = none. */
   expires_at: string;
   /** False = this node is excluded from Telegram offline/recovery alerts. */

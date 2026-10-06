@@ -62,6 +62,10 @@ export interface NodeRow {
   /** Bytes moved since the start of `traffic_month`. */
   traffic_month_in: number;
   traffic_month_out: number;
+  /** Signed manual correction to the metered usage (bytes). */
+  traffic_offset: number;
+  /** 'YYYY-MM' the correction was made in; '' = never. Expires on rollover. */
+  traffic_offset_month: string;
   expires_at: string;
   /** 0 = excluded from Telegram offline/recovery alerts. */
   notify: number;
@@ -376,6 +380,41 @@ export function accumulateMonthTraffic(
   return { month, in: Math.trunc(baseIn + deltaIn), out: Math.trunc(baseOut + deltaOut) };
 }
 
+/**
+ * Usage this month as the quota meters it, ignoring any manual correction:
+ * both directions when `traffic_both`, outbound only otherwise.
+ *
+ * Counters stamped with a past month read as 0: they describe a period that
+ * has already been billed, and the next report resets them anyway — showing
+ * last month's total against this month's quota would be plainly wrong.
+ */
+export function meteredMonthBytes(
+  row: Pick<NodeRow, 'traffic_both' | 'traffic_month' | 'traffic_month_in' | 'traffic_month_out'>,
+  now: number,
+): number {
+  if (str(row.traffic_month) !== monthKey(now)) return 0;
+  const inbound = num(row.traffic_month_in);
+  const outbound = num(row.traffic_month_out);
+  return Math.trunc(num(row.traffic_both, 1) !== 0 ? inbound + outbound : outbound);
+}
+
+/**
+ * The number the dashboard shows as "used this month": automatic metering plus
+ * the operator's correction, when that correction belongs to the current month.
+ *
+ * The correction is stored as an offset (see migration 0008) so it survives the
+ * reports that keep accumulating on top of it, and so it expires on its own
+ * when the billing month rolls over.
+ */
+export function monthUsedBytes(
+  row: Pick<NodeRow, 'traffic_both' | 'traffic_month' | 'traffic_month_in' | 'traffic_month_out' | 'traffic_offset' | 'traffic_offset_month'>,
+  now: number,
+): number {
+  const metered = meteredMonthBytes(row, now);
+  const offset = str(row.traffic_offset_month) === monthKey(now) ? num(row.traffic_offset) : 0;
+  return Math.max(0, Math.trunc(metered + offset));
+}
+
 /** `online` is always derived from `last_seen` — it is never stored (§7). */
 export function isOnline(row: Pick<NodeRow, 'last_seen'>, offlineAfter: number, now: number): boolean {
   return num(row.last_seen) > 0 && num(row.last_seen) >= now - offlineAfter;
@@ -403,6 +442,8 @@ export function mapNodeSummary(row: NodeRow, offlineAfter: number, now: number):
     traffic_both: num(row.traffic_both, 1) !== 0,
     traffic_month_in: Math.trunc(num(row.traffic_month_in)),
     traffic_month_out: Math.trunc(num(row.traffic_month_out)),
+    traffic_used: monthUsedBytes(row, now),
+    traffic_corrected: str(row.traffic_offset_month) === monthKey(now) && num(row.traffic_offset) !== 0,
     expires_at: str(row.expires_at),
     notify: num(row.notify, 1) !== 0,
     country: str(row.country),
@@ -535,6 +576,27 @@ export async function updateNode(
   if ('traffic_both' in patch) {
     sets.push('traffic_both = ?');
     binds.push(bool(patch.traffic_both, true) ? 1 : 0);
+  }
+  if ('traffic_used_gb' in patch) {
+    // The operator types the usage they want to see; the difference against
+    // what the agent has metered so far is stored as an offset, so reports
+    // keep accumulating on top of the correction instead of overwriting it.
+    const current = await getNode(db, id);
+    if (current !== null) {
+      const targetBytes = Math.trunc(
+        Math.min(1_000_000, Math.max(0, num(patch.traffic_used_gb))) * 1024 ** 3,
+      );
+      const metered = meteredMonthBytes(
+        'traffic_both' in patch
+          ? { ...current, traffic_both: bool(patch.traffic_both, true) ? 1 : 0 }
+          : current,
+        nowSec(),
+      );
+      sets.push('traffic_offset = ?');
+      binds.push(targetBytes - metered);
+      sets.push('traffic_offset_month = ?');
+      binds.push(monthKey(nowSec()));
+    }
   }
   if ('expires_at' in patch) {
     sets.push('expires_at = ?');

@@ -28,6 +28,8 @@ interface NodeFormState {
   price: string;
   traffic_gb: string;
   traffic_both: boolean;
+  /** Manual "used this month" override in GB; '' = leave as metered. */
+  traffic_used_gb: string;
   expires_at: string;
   notify: boolean;
 }
@@ -42,6 +44,7 @@ const EMPTY_FORM: NodeFormState = {
   price: '',
   traffic_gb: '',
   traffic_both: true,
+  traffic_used_gb: '',
   expires_at: '',
   notify: true,
 };
@@ -64,6 +67,10 @@ function toForm(node: AdminNode): NodeFormState {
     price: node.price,
     traffic_gb: node.traffic_gb > 0 ? String(node.traffic_gb) : '',
     traffic_both: node.traffic_both,
+    // Prefilled with the number currently displayed, rounded to 0.1 GB, so
+    // saving without touching it is a no-op rather than a surprise reset.
+    traffic_used_gb:
+      node.traffic_used > 0 ? String(Math.round((node.traffic_used / 1024 ** 3) * 10) / 10) : '',
     expires_at: node.expires_at,
     notify: node.notify,
   };
@@ -75,6 +82,10 @@ function planPayload(form: NodeFormState) {
     price: form.price.trim(),
     traffic_gb: Number.parseInt(form.traffic_gb, 10) || 0,
     traffic_both: form.traffic_both,
+    // Only sent when set: an empty box means "keep metering automatically".
+    ...(form.traffic_used_gb.trim() === ''
+      ? {}
+      : { traffic_used_gb: Math.max(0, Number.parseFloat(form.traffic_used_gb) || 0) }),
     expires_at: form.expires_at,
     notify: form.notify,
   };
@@ -558,6 +569,16 @@ export default function AdminNodes(): ReactNode {
             hint={t('admin.nodes.trafficBothHint')}
             checked={form.traffic_both}
             onChange={(event) => setForm((current) => ({ ...current, traffic_both: event.target.checked }))}
+          />
+          <Input
+            label={t('admin.nodes.trafficUsed')}
+            hint={t('admin.nodes.trafficUsedHint')}
+            type="number"
+            inputMode="decimal"
+            min={0}
+            step="0.1"
+            value={form.traffic_used_gb}
+            onChange={(event) => setForm((current) => ({ ...current, traffic_used_gb: event.target.value }))}
           />
           <Checkbox
             label={t('admin.nodes.hidden')}

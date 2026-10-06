@@ -63,6 +63,10 @@ export interface NodeSummary {
   /** Bytes moved since the start of the current month. */
   traffic_month_in: number;
   traffic_month_out: number;
+  /** Usage the quota meters this month, including any manual correction. */
+  traffic_used: number;
+  /** True when an operator's manual correction is currently in effect. */
+  traffic_corrected: boolean;
   /** Expiry date 'YYYY-MM-DD'; '' = none. */
   expires_at: string;
   /** False = excluded from Telegram offline/recovery alerts. */
@@ -203,6 +207,8 @@ export interface CreateNodeInput {
   price?: string;
   traffic_gb?: number;
   traffic_both?: boolean;
+  /** Absolute "used this month" in GB; stored as an offset server-side. */
+  traffic_used_gb?: number;
   expires_at?: string;
   notify?: boolean;
 }
@@ -217,6 +223,8 @@ export interface UpdateNodeInput {
   price?: string;
   traffic_gb?: number;
   traffic_both?: boolean;
+  /** Absolute "used this month" in GB; stored as an offset server-side. */
+  traffic_used_gb?: number;
   expires_at?: string;
   notify?: boolean;
 }
