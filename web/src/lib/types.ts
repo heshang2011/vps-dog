@@ -30,6 +30,12 @@ export interface MetricSample {
   load15: number;
 }
 
+/** Static hardware identity from the agent's `host` envelope. */
+export interface NodeHostInfo {
+  cpu_model: string;
+  cpu_cores: number;
+}
+
 export interface NodeSummary {
   id: string;
   name: string;
@@ -46,6 +52,14 @@ export interface NodeSummary {
   uptime: number;
   created_at: number;
   metrics: MetricSample | null;
+  /** CPU model / core count; present in newer workers, null until reported. */
+  host?: NodeHostInfo | null;
+  /** Operator-set plan metadata ('' / 0 = unset). */
+  price: string;
+  /** Monthly traffic quota in GB; 0 = unset/unlimited. */
+  traffic_gb: number;
+  /** Expiry date 'YYYY-MM-DD'; '' = none. */
+  expires_at: string;
   /** derived helpers computed by the worker */
   cpu: number;
   mem_percent: number;
@@ -177,6 +191,9 @@ export interface CreateNodeInput {
   tags?: string[];
   hidden?: boolean;
   sort_order?: number;
+  price?: string;
+  traffic_gb?: number;
+  expires_at?: string;
 }
 
 export interface UpdateNodeInput {
@@ -186,6 +203,9 @@ export interface UpdateNodeInput {
   tags?: string[];
   hidden?: boolean;
   sort_order?: number;
+  price?: string;
+  traffic_gb?: number;
+  expires_at?: string;
 }
 
 export interface CreateNodeResponse {
@@ -237,6 +257,11 @@ export interface Settings {
   custom_head: string;
   /** present in newer workers; optional so older ones still typecheck */
   allow_auto_register?: boolean;
+  /** Telegram notifications; optional so older workers still typecheck */
+  tg_bot_token?: string;
+  tg_chat_id?: string;
+  tg_notify_offline?: boolean;
+  tg_notify_online?: boolean;
 }
 
 export type ThemeSetting = 'auto' | 'light' | 'dark';

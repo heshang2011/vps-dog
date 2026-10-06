@@ -1,8 +1,9 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Badge } from '../components/Badge';
 import { EmptyState } from '../components/EmptyState';
 import { Button } from '../components/Button';
 import { Input } from '../components/Input';
+import { MeterStyleSwitch, readMeterStyle, writeMeterStyle, type MeterStyle } from '../components/MeterStyleSwitch';
 import { Select } from '../components/Select';
 import { NodeCard, NodeCardSkeleton } from '../components/NodeCard';
 import { Spinner } from '../components/Spinner';
@@ -94,7 +95,12 @@ export default function Dashboard(): ReactNode {
   const [search, setSearch] = useState('');
   const [group, setGroup] = useState('all');
   const [showHidden, setShowHidden] = useState(false);
+  const [meterStyle, setMeterStyle] = useState<MeterStyle>(readMeterStyle);
   const debouncedSearch = useDebounced(search, 180);
+
+  useEffect(() => {
+    writeMeterStyle(meterStyle);
+  }, [meterStyle]);
 
   const nodes = useMemo<ReadonlyArray<NodeSummary>>(() => data?.nodes ?? [], [data]);
 
@@ -191,6 +197,9 @@ export default function Dashboard(): ReactNode {
             />
             {t('dashboard.showHidden')}
           </label>
+          <div className="flex h-9.5 items-center">
+            <MeterStyleSwitch value={meterStyle} onChange={setMeterStyle} />
+          </div>
         </div>
       </header>
 
@@ -235,17 +244,21 @@ export default function Dashboard(): ReactNode {
       ) : (
         <div className="flex flex-col gap-4">
           {filtered.map((node) => (
-            <NodeCard key={node.id} node={node} />
+            <NodeCard key={node.id} node={node} meterStyle={meterStyle} />
           ))}
         </div>
       )}
 
-      {isFetching && !isPending && !isError ? (
-        <p className="flex items-center justify-center gap-2 text-[11px] text-muted">
-          <Spinner size={11} />
-          {t('common.loading')}
-        </p>
-      ) : null}
+      {/* Fixed-height slot: the indicator must not shift the page in and out
+          of the layout on every poll cycle. */}
+      <div className="flex h-4 items-center justify-center" aria-live="polite">
+        {isFetching && !isPending && !isError ? (
+          <p className="flex items-center gap-2 text-[11px] text-muted">
+            <Spinner size={11} />
+            {t('common.loading')}
+          </p>
+        ) : null}
+      </div>
     </div>
   );
 }

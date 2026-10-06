@@ -196,7 +196,12 @@ export function Chart({ option, height = 220, className = '', ariaLabel }: Chart
   useEffect(() => {
     const instance = instanceRef.current;
     if (instance === null || instance.isDisposed()) return;
-    instance.setOption(merged, { notMerge: true, lazyUpdate: true });
+    // Merge mode (the default): a data update morphs the existing series into
+    // place. `notMerge: true` here would rebuild every series and replay the
+    // entry animation on each poll cycle, which read as the page flashing.
+    // The instance is recreated on theme change, so stale styling cannot
+    // survive a flip, and every chart keeps a fixed series list.
+    instance.setOption(merged, { lazyUpdate: true });
   }, [merged]);
 
   const cssHeight = typeof height === 'number' ? `${height}px` : height;

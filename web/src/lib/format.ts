@@ -234,3 +234,15 @@ export function truncate(value: string, max = 32): string {
   if (value.length <= max) return value;
   return `${value.slice(0, Math.max(1, max - 1))}…`;
 }
+
+/** Human quota from GB: 500 → "500 GB", 1024 → "1.0 TB". */
+export function quota(gb: number): string {
+  return bytes(gb * 1024 ** 3);
+}
+
+/** Whole days from now until the end of `dateStr` ('YYYY-MM-DD'); ≤ 0 when past. */
+export function daysUntil(dateStr: string, nowMs: number): number {
+  const end = new Date(`${dateStr}T23:59:59`).getTime();
+  if (Number.isNaN(end)) return 0;
+  return Math.ceil((end - nowMs) / 86_400_000);
+}

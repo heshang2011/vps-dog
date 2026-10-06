@@ -4,6 +4,7 @@ import { Badge, StatusDot } from './Badge';
 import { Button } from './Button';
 import { Chart, ChartSkeleton, lineSeries } from './Chart';
 import { Donut } from './Donut';
+import { type MeterStyle } from './MeterStyleSwitch';
 import { ProgressBar } from './ProgressBar';
 import { RangeSwitch, type RangeHours } from './RangeSwitch';
 import {
@@ -24,7 +25,7 @@ import {
   IconRefresh,
   IconUpload,
 } from './icons';
-import { bytes, cssVar, duration, number, rate, ratioPercent, relativeTime } from '../lib/format';
+import { bytes, cssVar, daysUntil, duration, number, quota, rate, ratioPercent, relativeTime, thresholdTone, toneColor } from '../lib/format';
 import { useI18n } from '../lib/i18n';
 import { useNodeMetrics, useNow } from '../lib/useLive';
 import type { MetricPoint, NodeSummary } from '../lib/types';
@@ -57,16 +58,49 @@ function MetricTile({
   label,
   value,
   percent,
-  hint,
+  hints = [],
+  mode = 'bar',
 }: {
   icon: ReactNode;
   label: string;
   value: string;
   percent: number;
-  hint?: string;
+  /** Detail lines under the value: usage first, hardware config second. */
+  hints?: readonly string[];
+  mode?: MeterStyle;
 }): ReactNode {
+  if (mode === 'ring') {
+    return (
+      <div className={`flex h-full flex-col items-center gap-2 p-3 text-center ${TILE}`}>
+        <div className="flex w-full items-center gap-2">
+          <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-success/12 text-success">
+            {icon}
+          </span>
+          <span className="min-w-0 truncate text-[11px] text-muted">{label}</span>
+        </div>
+        <div className="flex min-h-20 flex-1 items-center justify-center">
+          <Donut
+            size={72}
+            thickness={8}
+            ariaLabel={`${label}: ${value}`}
+            slices={[{ label, value: percent, color: toneColor(thresholdTone(percent)) }]}
+            centerBottom={<span className="num text-[11px] font-semibold text-text">{value}</span>}
+          />
+        </div>
+        {hints.length > 0 ? (
+          <span className="flex w-full flex-col gap-0.5">
+            {hints.map((line) => (
+              <span key={line} className="num truncate text-[11px] text-muted/85" title={line}>
+                {line}
+              </span>
+            ))}
+          </span>
+        ) : null}
+      </div>
+    );
+  }
   return (
-    <div className={`flex h-full flex-col justify-center gap-2.5 p-3 ${TILE}`}>
+    <div className={`flex h-full flex-col gap-2.5 p-3.5 ${TILE}`}>
       <div className="flex items-center gap-2.5">
         <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-success/12 text-success">
           {icon}
@@ -76,12 +110,16 @@ function MetricTile({
           <span className="num text-sm font-semibold text-text">{value}</span>
         </span>
       </div>
-      {hint !== undefined ? (
-        <span className="num truncate text-[11px] text-muted/85" title={hint}>
-          {hint}
+      {hints.length > 0 ? (
+        <span className="mt-auto flex flex-col gap-0.5">
+          {hints.map((line) => (
+            <span key={line} className="num truncate text-[11px] text-muted/85" title={line}>
+              {line}
+            </span>
+          ))}
         </span>
       ) : null}
-      <ProgressBar value={percent} showValue={false} />
+      <ProgressBar value={percent} showValue={false} className={hints.length === 0 ? 'mt-auto' : ''} />
     </div>
   );
 }
@@ -101,7 +139,7 @@ function RateCell({
 }): ReactNode {
   const toneClass = tone === 'success' ? 'text-success' : 'text-accent';
   return (
-    <div className="flex items-center gap-2.5 p-3">
+    <div className="flex items-center gap-2.5 px-3 py-2">
       <span className={`shrink-0 ${toneClass}`}>{icon}</span>
       <span className="flex min-w-0 flex-col gap-0.5">
         <span className="text-[11px] text-muted">{label}</span>
@@ -181,6 +219,8 @@ function LegendRow({
 
 export interface NodeCardProps {
   node: NodeSummary;
+  /** How the CPU / memory / disk tiles draw their meter (dashboard-wide preference). */
+  meterStyle: MeterStyle;
   /** Cards start open; collapse state is local to the card. */
   defaultExpanded?: boolean;
 }
@@ -192,7 +232,7 @@ export interface NodeCardProps {
  * The per-node history is only requested while the card is open, so a collapsed
  * node costs no extra round trip.
  */
-export function NodeCard({ node, defaultExpanded = true }: NodeCardProps): ReactNode {
+export function NodeCard({ node, meterStyle, defaultExpanded = true }: NodeCardProps): ReactNode {
   const { t, lang } = useI18n();
   const now = useNow(5_000);
   const [expanded, setExpanded] = useState(defaultExpanded);
@@ -209,6 +249,23 @@ export function NodeCard({ node, defaultExpanded = true }: NodeCardProps): React
   const memPercent = online && metrics !== null ? ratioPercent(metrics.mem_used, metrics.mem_total) : 0;
   const diskPercent =
     online && metrics !== null ? ratioPercent(metrics.disk_used, metrics.disk_total) : 0;
+
+  // Detail lines for the three tiles: usage first, hardware config second.
+  // `host` is absent on older workers and until the agent's first report.
+  const cpuHints: string[] = [];
+  if (online && metrics !== null) {
+    cpuHints.push(`${t('node.load1.short')} ${number(metrics.load1, 2)}`);
+  }
+  const hostInfo = node.host ?? null;
+  if (hostInfo !== null && hostInfo.cpu_cores > 0) {
+    const cores = t('node.cpuCores', { n: hostInfo.cpu_cores });
+    cpuHints.push(hostInfo.cpu_model.length > 0 ? `${cores} · ${hostInfo.cpu_model}` : cores);
+  }
+  const usageHint = (used: number, total: number): string =>
+    total > 0 ? `${bytes(used)} / ${bytes(total)}` : bytes(used);
+  const memHints = online && metrics !== null ? [usageHint(metrics.mem_used, metrics.mem_total)] : [];
+  const diskHints =
+    online && metrics !== null ? [usageHint(metrics.disk_used, metrics.disk_total)] : [];
 
   const netIn = metrics !== null ? metrics.net_in : 0;
   const netOut = metrics !== null ? metrics.net_out : 0;
@@ -307,6 +364,42 @@ export function NodeCard({ node, defaultExpanded = true }: NodeCardProps): React
             </span>
           </>
         ) : null}
+        {node.price.length > 0 ? (
+          <>
+            <span aria-hidden="true">·</span>
+            {/* Plain font: the price is free-form operator text (often CJK),
+                which the tabular `num` face has no glyphs for. */}
+            <span className="text-text/85">{node.price}</span>
+          </>
+        ) : null}
+        {node.traffic_gb > 0 ? (
+          <>
+            <span aria-hidden="true">·</span>
+            <span className="flex items-center gap-1.5">
+              <span>{t('node.trafficQuota')}</span>
+              <span className="num text-text/85">{quota(node.traffic_gb)}</span>
+            </span>
+          </>
+        ) : null}
+        {node.expires_at.length > 0 ? (
+          <>
+            <span aria-hidden="true">·</span>
+            <span className="flex items-center gap-1.5">
+              <span>{t('node.expires')}</span>
+              <span
+                className={`num ${
+                  daysUntil(node.expires_at, now) <= 0
+                    ? 'font-semibold text-danger'
+                    : daysUntil(node.expires_at, now) <= 30
+                      ? 'text-warn'
+                      : 'text-text/85'
+                }`}
+              >
+                {node.expires_at}
+              </span>
+            </span>
+          </>
+        ) : null}
         <span aria-hidden="true">·</span>
         <span className="flex items-center gap-1.5">
           <span>{t('node.lastSeen')}</span>
@@ -316,39 +409,39 @@ export function NodeCard({ node, defaultExpanded = true }: NodeCardProps): React
 
       {expanded ? (
         <div id={panelId} className="flex flex-col gap-4 border-t border-border/60 p-5">
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,2.1fr)_minmax(0,1fr)]">
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(0,1.75fr)_minmax(0,1fr)]">
             {/* ── meters ──
-                Two blocks that stretch to fill the column, so the panel is
-                never shorter than the chart / donut beside it. */}
+                The tiles stretch to fill the column so the panel is never
+                shorter than the chart / donut beside it; the rate row keeps
+                its natural (compact) height. */}
             <div className="flex flex-col gap-2.5">
               <div className="grid flex-1 grid-cols-3 gap-2.5">
                 <MetricTile
+                  mode={meterStyle}
                   icon={<IconCpu className="size-4" />}
                   label={t('node.cpu')}
                   value={`${number(cpu, 1)}%`}
                   percent={cpu}
-                  hint={
-                    metrics !== null
-                      ? `${t('node.load1.short')} ${number(metrics.load1, 2)}`
-                      : undefined
-                  }
+                  hints={cpuHints}
                 />
                 <MetricTile
+                  mode={meterStyle}
                   icon={<IconMemory className="size-4" />}
                   label={t('node.mem')}
                   value={`${number(memPercent, 1)}%`}
                   percent={memPercent}
-                  hint={metrics !== null ? bytes(metrics.mem_used) : undefined}
+                  hints={memHints}
                 />
                 <MetricTile
+                  mode={meterStyle}
                   icon={<IconDisk className="size-4" />}
                   label={t('node.disk')}
                   value={`${number(diskPercent, 1)}%`}
                   percent={diskPercent}
-                  hint={metrics !== null ? bytes(metrics.disk_used) : undefined}
+                  hints={diskHints}
                 />
               </div>
-              <div className={`grid flex-1 grid-cols-2 divide-x divide-border/70 ${TILE}`}>
+              <div className={`grid flex-none grid-cols-2 divide-x divide-border/70 ${TILE}`}>
                 <RateCell
                   icon={<IconDownload className="size-5" />}
                   label={t('node.rx')}
