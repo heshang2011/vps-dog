@@ -222,6 +222,7 @@ adminRoutes.post('/nodes', async (c) => {
     sortOrder: Math.trunc(clampInt(body.sort_order, -1_000_000, 1_000_000, 0)),
     price: str(body.price),
     trafficGb: clampInt(body.traffic_gb, 0, 1_000_000, 0),
+    trafficBoth: 'traffic_both' in body ? bool(body.traffic_both, true) : true,
     expiresAt: str(body.expires_at),
     notify: 'notify' in body ? bool(body.notify, true) : true,
   });

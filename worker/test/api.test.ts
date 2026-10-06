@@ -117,6 +117,14 @@ function nowSec(): number {
   return Math.floor(Date.now() / 1000);
 }
 
+/** Month-to-date counters for a node, read straight from D1. */
+function monthTraffic(nodeId: string) {
+  return env.DB
+    .prepare('SELECT traffic_month, traffic_month_in, traffic_month_out FROM nodes WHERE id = ?')
+    .bind(nodeId)
+    .first<{ traffic_month: string; traffic_month_in: number; traffic_month_out: number }>();
+}
+
 describe('public read API', () => {
   it('GET /api/status on an empty DB returns zeros', async () => {
     const res = await api('/api/status');
@@ -343,6 +351,87 @@ describe('admin node CRUD', () => {
     });
     const patched = (await patch.json()) as { node: Record<string, unknown> };
     expect(patched.node.expires_at).toBe('2027-03-01');
+  });
+
+  it('defaults the traffic quota to counting both directions', async () => {
+    const cookie = await adminCookie();
+    const res = await api('/api/admin/nodes', jsonInit({ name: 'quota-01', traffic_gb: 100 }, cookie));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { node: Record<string, unknown> };
+    // Default: down + up count toward the quota (most providers meter it so).
+    expect(body.node.traffic_both).toBe(true);
+
+    // Opt into outbound-only metering.
+    const patch = await api(`/api/admin/nodes/${body.node.id}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', cookie, 'CF-Connecting-IP': '10.0.0.1' },
+      body: JSON.stringify({ traffic_both: false }),
+    });
+    const patched = (await patch.json()) as { node: Record<string, unknown> };
+    expect(patched.node.traffic_both).toBe(false);
+
+    const pub = (await (await api('/api/nodes')).json()) as { nodes: Array<Record<string, unknown>> };
+    expect(pub.nodes.find((n) => n.name === 'quota-01')?.traffic_both).toBe(false);
+  });
+
+  it('accumulates month-to-date traffic from the cumulative counters', async () => {
+    const cookie = await adminCookie();
+    const { node, token } = await createNode(cookie, 'month-01');
+
+    // First report: no baseline to diff against, so the month starts at 0.
+    await api('/api/v1/report', reportInit(token, { metrics: sample({ net_in: 1000, net_out: 500 }) }));
+    let row = await monthTraffic(node.id);
+    expect(row?.traffic_month_in).toBe(0);
+    expect(row?.traffic_month_out).toBe(0);
+
+    // Second report: the positive delta is folded in.
+    await api('/api/v1/report', reportInit(token, { metrics: sample({ net_in: 3000, net_out: 1500 }) }));
+    row = await monthTraffic(node.id);
+    expect(row?.traffic_month_in).toBe(2000);
+    expect(row?.traffic_month_out).toBe(1000);
+
+    // Third report: accumulates on top.
+    await api('/api/v1/report', reportInit(token, { metrics: sample({ net_in: 4000, net_out: 2000 }) }));
+    row = await monthTraffic(node.id);
+    expect(row?.traffic_month_in).toBe(3000);
+    expect(row?.traffic_month_out).toBe(1500);
+
+    // A host reboot resets the agent counters to 0: the delta must not go
+    // negative, and the month total must not be corrupted.
+    await api('/api/v1/report', reportInit(token, { metrics: sample({ net_in: 10, net_out: 5 }) }));
+    row = await monthTraffic(node.id);
+    expect(row?.traffic_month_in).toBe(3000);
+    expect(row?.traffic_month_out).toBe(1500);
+
+    // Growth resumes from the new baseline.
+    await api('/api/v1/report', reportInit(token, { metrics: sample({ net_in: 510, net_out: 205 }) }));
+    row = await monthTraffic(node.id);
+    expect(row?.traffic_month_in).toBe(3500);
+    expect(row?.traffic_month_out).toBe(1700);
+
+    // The public DTO carries the counters for the dashboard's remaining-traffic cell.
+    const pub = (await (await api('/api/nodes')).json()) as { nodes: Array<Record<string, unknown>> };
+    const pubRow = pub.nodes.find((n) => n.id === node.id);
+    expect(pubRow?.traffic_month_in).toBe(3500);
+    expect(pubRow?.traffic_month_out).toBe(1700);
+  });
+
+  it('resets the month counters when a new month starts', async () => {
+    const cookie = await adminCookie();
+    const { node, token } = await createNode(cookie, 'month-02');
+    await api('/api/v1/report', reportInit(token, { metrics: sample({ net_in: 1000, net_out: 500 }) }));
+    await api('/api/v1/report', reportInit(token, { metrics: sample({ net_in: 5000, net_out: 2500 }) }));
+    let row = await monthTraffic(node.id);
+    expect(row?.traffic_month_in).toBe(4000);
+
+    // Pretend the stored counters belong to a past month.
+    await env.DB.prepare("UPDATE nodes SET traffic_month = '2020-01' WHERE id = ?").bind(node.id).run();
+    await api('/api/v1/report', reportInit(token, { metrics: sample({ net_in: 6000, net_out: 3000 }) }));
+    row = await monthTraffic(node.id);
+    // New month: the base resets, only the fresh delta counts.
+    expect(row?.traffic_month_in).toBe(1000);
+    expect(row?.traffic_month_out).toBe(500);
+    expect(row?.traffic_month).toBe(new Date().toISOString().slice(0, 7));
   });
 
   it('deletes a node together with its metrics and pings', async () => {

@@ -55,6 +55,13 @@ export interface NodeRow {
   /** Operator-set plan metadata (§2): display text, GB quota, ISO date. */
   price: string;
   traffic_gb: number;
+  /** 1 = quota counts down+up; 0 = outbound only. */
+  traffic_both: number;
+  /** 'YYYY-MM' the month counters belong to; '' = never accumulated. */
+  traffic_month: string;
+  /** Bytes moved since the start of `traffic_month`. */
+  traffic_month_in: number;
+  traffic_month_out: number;
   expires_at: string;
   /** 0 = excluded from Telegram offline/recovery alerts. */
   notify: number;
@@ -317,6 +324,43 @@ export function coerceExpiresAt(value: unknown): string {
   return m[1];
 }
 
+/** 'YYYY-MM' (UTC) for a Unix-seconds timestamp. */
+export function monthKey(ts: number): string {
+  return new Date(ts * 1000).toISOString().slice(0, 7);
+}
+
+export interface MonthTraffic {
+  month: string;
+  in: number;
+  out: number;
+}
+
+/**
+ * Fold one report's cumulative counters into the month-to-date totals.
+ *
+ * The agent reports `net_in`/`net_out` since boot, so the month total is built
+ * from the positive delta against the previous sample: a host reboot resets
+ * those counters to 0, and a naive difference would go negative or wildly
+ * overcount. The first report after a gap (or ever) contributes nothing —
+ * there is no baseline to diff against. Crossing into a new month resets the
+ * counters, which is what makes a monthly quota meaningful on a server that
+ * has been up longer than its billing period.
+ */
+export function accumulateMonthTraffic(
+  prev: MetricSample | null,
+  next: MetricSample,
+  row: Pick<NodeRow, 'traffic_month' | 'traffic_month_in' | 'traffic_month_out'>,
+  now: number,
+): MonthTraffic {
+  const month = monthKey(now);
+  const sameMonth = str(row.traffic_month) === month;
+  const baseIn = sameMonth ? num(row.traffic_month_in) : 0;
+  const baseOut = sameMonth ? num(row.traffic_month_out) : 0;
+  const deltaIn = prev !== null ? Math.max(0, next.net_in - prev.net_in) : 0;
+  const deltaOut = prev !== null ? Math.max(0, next.net_out - prev.net_out) : 0;
+  return { month, in: Math.trunc(baseIn + deltaIn), out: Math.trunc(baseOut + deltaOut) };
+}
+
 /** `online` is always derived from `last_seen` — it is never stored (§7). */
 export function isOnline(row: Pick<NodeRow, 'last_seen'>, offlineAfter: number, now: number): boolean {
   return num(row.last_seen) > 0 && num(row.last_seen) >= now - offlineAfter;
@@ -341,6 +385,9 @@ export function mapNodeSummary(row: NodeRow, offlineAfter: number, now: number):
     host: coerceHostInfo(parseJsonColumn<unknown>(row.host_info ?? null, null)),
     price: str(row.price),
     traffic_gb: Math.trunc(num(row.traffic_gb)),
+    traffic_both: num(row.traffic_both, 1) !== 0,
+    traffic_month_in: Math.trunc(num(row.traffic_month_in)),
+    traffic_month_out: Math.trunc(num(row.traffic_month_out)),
     expires_at: str(row.expires_at),
     notify: num(row.notify, 1) !== 0,
     country: str(row.country),
@@ -391,6 +438,7 @@ export interface CreateNodeInput {
   sortOrder?: number;
   price?: string;
   trafficGb?: number;
+  trafficBoth?: boolean;
   expiresAt?: string;
   notify?: boolean;
 }
@@ -402,8 +450,8 @@ export async function createNode(db: D1Database, input: CreateNodeInput): Promis
     .prepare(
       `INSERT INTO nodes
          (id, name, token_hash, token_hint, group_name, region, tags, hidden, sort_order,
-          created_at, updated_at, last_seen, latest, price, traffic_gb, expires_at, notify)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?, ?)`,
+          created_at, updated_at, last_seen, latest, price, traffic_gb, traffic_both, expires_at, notify)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?, ?, ?)`,
     )
     .bind(
       id,
@@ -419,6 +467,7 @@ export async function createNode(db: D1Database, input: CreateNodeInput): Promis
       ts,
       coercePrice(input.price ?? ''),
       clampInt(input.trafficGb ?? 0, 0, 1_000_000, 0),
+      input.trafficBoth === false ? 0 : 1,
       coerceExpiresAt(input.expiresAt ?? ''),
       input.notify === false ? 0 : 1,
     )
@@ -467,6 +516,10 @@ export async function updateNode(
   if ('traffic_gb' in patch) {
     sets.push('traffic_gb = ?');
     binds.push(clampInt(patch.traffic_gb, 0, 1_000_000, 0));
+  }
+  if ('traffic_both' in patch) {
+    sets.push('traffic_both = ?');
+    binds.push(bool(patch.traffic_both, true) ? 1 : 0);
   }
   if ('expires_at' in patch) {
     sets.push('expires_at = ?');

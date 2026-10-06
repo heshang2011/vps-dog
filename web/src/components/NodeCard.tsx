@@ -173,31 +173,47 @@ function TrafficCell({
   label,
   down,
   up,
+  downLabel,
+  upLabel,
+  tone,
+  title,
 }: {
   icon: ReactNode;
   label: string;
   down: string;
   up: string;
+  /** Override the ↓/↑ prefixes (the quota cell shows "left" and "share"). */
+  downLabel?: string;
+  upLabel?: string;
+  /** Colours the numbers when the quota is running low / exhausted. */
+  tone?: 'warn' | 'danger';
+  title?: string;
 }): ReactNode {
+  const toneClass =
+    tone === 'danger' ? 'text-danger' : tone === 'warn' ? 'text-warn' : 'text-text';
   return (
-    <div className="flex items-center gap-3 px-5 py-3">
+    <div className="flex items-center gap-3 px-5 py-3" title={title}>
       <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-surface-2 text-muted">
         {icon}
       </span>
       <div className="flex min-w-0 flex-col gap-1">
         <span className="truncate text-[11px] text-muted">{label}</span>
         <div className="flex items-center gap-3 text-xs">
-          <span className="num flex items-center gap-1 text-text">
+          <span className={`num flex items-center gap-1 ${toneClass}`}>
             <span className="text-success" aria-hidden="true">
               ↓
             </span>
             {down}
+            {downLabel !== undefined ? (
+              <span className="text-muted">{downLabel}</span>
+            ) : null}
           </span>
-          <span className="num flex items-center gap-1 text-text">
+          <span className={`num flex items-center gap-1 ${toneClass}`}>
             <span className="text-accent" aria-hidden="true">
               ↑
             </span>
             {up}
+            {upLabel !== undefined ? <span className="text-muted">{upLabel}</span> : null}
           </span>
         </div>
       </div>
@@ -296,8 +312,17 @@ export function NodeCard({ node, meterStyle, defaultExpanded = true }: NodeCardP
 
   const todayIn = counterDelta(dayPoints, (p) => p.net_in, startOfToday);
   const todayOut = counterDelta(dayPoints, (p) => p.net_out, startOfToday);
-  const day24In = counterDelta(dayPoints, (p) => p.net_in);
-  const day24Out = counterDelta(dayPoints, (p) => p.net_out);
+
+  // Remaining quota for the current month. Metered month-to-date (not since
+  // boot) because the quota is monthly; `traffic_both` decides whether upload
+  // counts too — most providers meter down + up.
+  const monthIn = node.traffic_month_in ?? 0;
+  const monthOut = node.traffic_month_out ?? 0;
+  const usedThisMonth = node.traffic_both === false ? monthOut : monthIn + monthOut;
+  const quotaBytes = node.traffic_gb > 0 ? node.traffic_gb * 1024 ** 3 : 0;
+  const remaining = quotaBytes > 0 ? quotaBytes - usedThisMonth : 0;
+  const remainingPercent = quotaBytes > 0 ? (remaining / quotaBytes) * 100 : 0;
+  const overQuota = quotaBytes > 0 && remaining <= 0;
 
   const chartOption = useMemo(() => {
     const points = chartQuery.data?.points ?? [];
@@ -598,16 +623,24 @@ export function NodeCard({ node, meterStyle, defaultExpanded = true }: NodeCardP
           up={bytes(todayOut)}
         />
         <TrafficCell
-          icon={<IconClock className="size-4" />}
-          label={t('dashboard.last24hTraffic')}
-          down={bytes(day24In)}
-          up={bytes(day24Out)}
-        />
-        <TrafficCell
           icon={<IconDatabase className="size-4" />}
           label={t('dashboard.totalTraffic')}
           down={bytes(netIn)}
           up={bytes(netOut)}
+        />
+        <TrafficCell
+          icon={<IconClock className="size-4" />}
+          label={t('dashboard.remainingTraffic')}
+          down={quotaBytes > 0 ? bytes(Math.max(0, remaining)) : '–'}
+          up={quotaBytes > 0 ? `${number(Math.max(0, remainingPercent), 0)}%` : t('dashboard.noQuota')}
+          downLabel={t('dashboard.remainingLeft')}
+          upLabel={t('dashboard.remainingShare')}
+          tone={overQuota ? 'danger' : quotaBytes > 0 && remainingPercent < 20 ? 'warn' : undefined}
+          title={
+            quotaBytes > 0
+              ? `${t('dashboard.quotaUsed')}: ${bytes(usedThisMonth)} / ${quota(node.traffic_gb)}`
+              : undefined
+          }
         />
         <div className="flex items-center justify-end px-5 py-3">
           <Link to={`/node/${node.id}`}>

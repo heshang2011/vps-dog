@@ -4,6 +4,7 @@
 import { Hono } from 'hono';
 import { clientIp, readAgentToken } from '../auth';
 import {
+  accumulateMonthTraffic,
   coerceHostInfo,
   coerceSample,
   createNode,
@@ -26,6 +27,7 @@ import {
   nowSec,
   num,
   ok,
+  parseJsonColumn,
   parseTags,
   readJsonBody,
   sha256hex,
@@ -151,11 +153,31 @@ agentRoutes.post('/report', async (c) => {
     // without it keeps whatever was stored before (COALESCE).
     const hostInfo = coerceHostInfo(host);
     const hostInfoJson = hostInfo !== null ? JSON.stringify(hostInfo) : null;
+    // Month-to-date traffic, folded from the cumulative counters against the
+    // sample we are about to replace (see accumulateMonthTraffic).
+    const prevSample = parseJsonColumn<Record<string, unknown> | null>(node.latest, null);
+    const month = accumulateMonthTraffic(
+      prevSample !== null ? coerceSample(prevSample) : null,
+      sample,
+      node,
+      now,
+    );
     await db
       .prepare(
-        'UPDATE nodes SET latest = ?, last_seen = ?, updated_at = ?, host_info = COALESCE(?, host_info) WHERE id = ?',
+        `UPDATE nodes SET latest = ?, last_seen = ?, updated_at = ?, host_info = COALESCE(?, host_info),
+                traffic_month = ?, traffic_month_in = ?, traffic_month_out = ?
+          WHERE id = ?`,
       )
-      .bind(JSON.stringify(sample), ts, now, hostInfoJson, node.id)
+      .bind(
+        JSON.stringify(sample),
+        ts,
+        now,
+        hostInfoJson,
+        month.month,
+        month.in,
+        month.out,
+        node.id,
+      )
       .run();
 
     // `host` is captured once: fill region/tags only while they are still empty.

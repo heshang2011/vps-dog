@@ -100,6 +100,10 @@ CREATE TABLE IF NOT EXISTS nodes (
   host_info   TEXT,                      -- JSON {cpu_model, cpu_cores} | NULL (§4.1)
   price       TEXT NOT NULL DEFAULT '',  -- operator-set display text ('' = unset)
   traffic_gb  INTEGER NOT NULL DEFAULT 0,-- monthly quota in GB; 0 = unlimited
+  traffic_both INTEGER NOT NULL DEFAULT 1,-- 1 = quota counts down+up; 0 = up only
+  traffic_month TEXT NOT NULL DEFAULT '',-- 'YYYY-MM' the counters belong to
+  traffic_month_in  INTEGER NOT NULL DEFAULT 0, -- bytes this month (§4.1)
+  traffic_month_out INTEGER NOT NULL DEFAULT 0,
   expires_at  TEXT NOT NULL DEFAULT '',  -- ISO date 'YYYY-MM-DD'; '' = none
   notify      INTEGER NOT NULL DEFAULT 1,-- 0 = excluded from Telegram alerts (§4.4.1)
   country     TEXT NOT NULL DEFAULT ''   -- ISO-3166 alpha-2 of source IP (§4.1)
@@ -253,6 +257,9 @@ interface NodeSummary {
   host: { cpu_model: string; cpu_cores: number } | null;  // hardware identity (§4.1)
   price: string;        // operator-set display text; '' = unset (§4.4)
   traffic_gb: number;   // monthly quota in GB; 0 = unlimited
+  traffic_both: boolean;// true = quota meters down+up; false = up only
+  traffic_month_in: number;  // bytes moved this month (see below)
+  traffic_month_out: number;
   expires_at: string;   // 'YYYY-MM-DD'; '' = none
   notify: boolean;      // false = excluded from Telegram alerts (§4.4.1)
   country: string;      // ISO-3166 alpha-2 of the source IP; '' = unknown (§4.1)
@@ -365,6 +372,14 @@ interface MetricSeries {
 地址变化时会覆盖旧值；取不到地址时保持原值不动。
 该字段由摄取路径独占写入，**不接受** `PATCH /api/admin/nodes/:id` 修改 ——
 手工设的值会被下一次上报静默覆盖。
+
+**月度流量累计。** Agent 上报的 `net_in` / `net_out` 是自启动以来的累计值，
+不能直接当作月度用量（长期运行的服务器会远超计费周期）。摄取路径用
+**上一次采样的正增量**累加出 `traffic_month_in` / `traffic_month_out`：
+主机重启会把计数器归零，因此只累加正向差值，否则会算出负数或严重虚高；
+首报没有基线，贡献为 0；跨月（`traffic_month` 变化）时计数清零重来。
+仪表盘的「剩余流量」= 配额 − 本月已用，`traffic_both` 决定是否把上行计入
+（默认计入，多数服务商如此）。
 
 `host.cpu_model` / `host.cpu_cores` 同样由摄取路径写入
 （`nodes.host_info`，迁移 `0004_host_info.sql`），经校验后随

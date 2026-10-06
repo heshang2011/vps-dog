@@ -58,6 +58,11 @@ export interface NodeSummary {
   price: string;
   /** Monthly traffic quota in GB; 0 = unset/unlimited. */
   traffic_gb: number;
+  /** True = the quota counts down + up; false = outbound only. */
+  traffic_both: boolean;
+  /** Bytes moved since the start of the current month. */
+  traffic_month_in: number;
+  traffic_month_out: number;
   /** Expiry date 'YYYY-MM-DD'; '' = none. */
   expires_at: string;
   /** False = excluded from Telegram offline/recovery alerts. */
@@ -197,6 +202,7 @@ export interface CreateNodeInput {
   sort_order?: number;
   price?: string;
   traffic_gb?: number;
+  traffic_both?: boolean;
   expires_at?: string;
   notify?: boolean;
 }
@@ -210,6 +216,7 @@ export interface UpdateNodeInput {
   sort_order?: number;
   price?: string;
   traffic_gb?: number;
+  traffic_both?: boolean;
   expires_at?: string;
   notify?: boolean;
 }

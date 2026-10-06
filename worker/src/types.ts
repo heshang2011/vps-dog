@@ -89,6 +89,11 @@ export interface NodeSummary {
   price: string;
   /** Monthly traffic quota in GB; 0 = unset/unlimited. */
   traffic_gb: number;
+  /** True (default) = the quota counts down + up; false = outbound only. */
+  traffic_both: boolean;
+  /** Bytes this node has moved since the start of the current month. */
+  traffic_month_in: number;
+  traffic_month_out: number;
   /** Expiry date as 'YYYY-MM-DD'; '' = none. */
   expires_at: string;
   /** False = this node is excluded from Telegram offline/recovery alerts. */

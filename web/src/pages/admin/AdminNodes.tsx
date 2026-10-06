@@ -27,6 +27,7 @@ interface NodeFormState {
   sort_order: string;
   price: string;
   traffic_gb: string;
+  traffic_both: boolean;
   expires_at: string;
   notify: boolean;
 }
@@ -40,6 +41,7 @@ const EMPTY_FORM: NodeFormState = {
   sort_order: '0',
   price: '',
   traffic_gb: '',
+  traffic_both: true,
   expires_at: '',
   notify: true,
 };
@@ -61,6 +63,7 @@ function toForm(node: AdminNode): NodeFormState {
     sort_order: String(node.sort_order),
     price: node.price,
     traffic_gb: node.traffic_gb > 0 ? String(node.traffic_gb) : '',
+    traffic_both: node.traffic_both,
     expires_at: node.expires_at,
     notify: node.notify,
   };
@@ -71,6 +74,7 @@ function planPayload(form: NodeFormState) {
   return {
     price: form.price.trim(),
     traffic_gb: Number.parseInt(form.traffic_gb, 10) || 0,
+    traffic_both: form.traffic_both,
     expires_at: form.expires_at,
     notify: form.notify,
   };
@@ -549,6 +553,12 @@ export default function AdminNodes(): ReactNode {
               onChange={(event) => setForm((current) => ({ ...current, expires_at: event.target.value }))}
             />
           </div>
+          <Checkbox
+            label={t('admin.nodes.trafficBoth')}
+            hint={t('admin.nodes.trafficBothHint')}
+            checked={form.traffic_both}
+            onChange={(event) => setForm((current) => ({ ...current, traffic_both: event.target.checked }))}
+          />
           <Checkbox
             label={t('admin.nodes.hidden')}
             checked={form.hidden}
