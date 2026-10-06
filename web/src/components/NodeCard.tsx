@@ -5,7 +5,7 @@ import { Button } from './Button';
 import { Chart, ChartSkeleton, lineSeries } from './Chart';
 import { CountryFlag } from './CountryFlag';
 import { Donut } from './Donut';
-import { type MeterStyle } from './MeterStyleSwitch';
+import { type LayoutMode, type MeterStyle } from './ViewModeSwitches';
 import { IconBellOff } from './icons';
 import { ProgressBar } from './ProgressBar';
 import { RangeSwitch, type RangeHours } from './RangeSwitch';
@@ -35,6 +35,11 @@ import type { MetricPoint, NodeSummary } from '../lib/types';
 /** Inner tile chrome — one level up from the card it sits in. */
 const TILE = 'rounded-xl border border-border/70 bg-surface-2/50';
 
+/** Interpunct separator for the meta strip; leads its fact, never dangles. */
+function Dot(): ReactNode {
+  return <span aria-hidden="true">·</span>;
+}
+
 /**
  * Sum of *positive* deltas of a cumulative counter, ignoring resets.
  * `net_in`/`net_out` restart at 0 when the host reboots, so a naive
@@ -62,6 +67,7 @@ function MetricTile({
   percent,
   hints = [],
   mode = 'bar',
+  compact = false,
 }: {
   icon: ReactNode;
   label: string;
@@ -70,6 +76,8 @@ function MetricTile({
   /** Detail lines under the value: usage first, hardware config second. */
   hints?: readonly string[];
   mode?: MeterStyle;
+  /** Narrow, height-constrained card: smaller chrome and ring. */
+  compact?: boolean;
 }): ReactNode {
   // Ring mode sweeps from 0 to its value on mount (the Donut's CSS transition
   // does the animating); updates afterwards morph in place.
@@ -83,17 +91,28 @@ function MetricTile({
 
   if (mode === 'ring') {
     return (
-      <div className={`flex h-full flex-col items-center gap-2 p-3 text-center ${TILE}`}>
+      <div
+        className={`flex h-full min-h-0 flex-col items-center text-center ${TILE} ${
+          compact ? 'gap-1 p-2' : 'gap-2 p-3'
+        }`}
+      >
         <div className="flex w-full items-center gap-2">
-          <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-success/12 text-success">
+          <span
+            className={`flex shrink-0 items-center justify-center rounded-lg bg-success/12 text-success ${
+              compact ? 'size-6' : 'size-7'
+            }`}
+          >
             {icon}
           </span>
           <span className="min-w-0 truncate text-[11px] text-muted">{label}</span>
         </div>
-        <div className="flex min-h-20 flex-1 items-center justify-center">
+        {/* `min-h-0` lets this box shrink inside a height-constrained (square)
+            card; the ring itself is capped by the available height so it is
+            never clipped by the card's `overflow-hidden`. */}
+        <div className="flex min-h-0 flex-1 items-center justify-center">
           <Donut
-            size={72}
-            thickness={8}
+            size={compact ? 58 : 72}
+            thickness={compact ? 7 : 8}
             ariaLabel={`${label}: ${value}`}
             // Two slices: the value arc plus a transparent remainder. A single
             // slice is always its own total, i.e. a perpetually full ring.
@@ -107,7 +126,7 @@ function MetricTile({
         {hints.length > 0 ? (
           <span className="flex w-full flex-col gap-0.5">
             {hints.map((line) => (
-              <span key={line} className="num truncate text-[11px] text-muted/85" title={line}>
+              <span key={line} className="num truncate text-[10px] text-muted/85" title={line}>
                 {line}
               </span>
             ))}
@@ -121,7 +140,7 @@ function MetricTile({
     // line on the left, the big value right-aligned, the bar spanning
     // underneath. Deliberately tight vertically: three stacked rows must not
     // grow the panel taller than ring mode's single row.
-    <div className={`flex h-full min-h-12 flex-col justify-center gap-1.5 px-3.5 py-2 ${TILE}`}>
+    <div className={`flex h-full min-h-11 flex-col justify-center gap-1.5 px-3.5 py-1.5 ${TILE}`}>
       <div className="flex min-w-0 items-center gap-2.5">
         <span className="flex size-5 shrink-0 items-center justify-center rounded-md bg-success/12 text-success">
           {icon}
@@ -145,16 +164,19 @@ function RateCell({
   value,
   hint,
   tone,
+  compact = false,
 }: {
   icon: ReactNode;
   label: string;
   value: string;
   hint?: string;
   tone: 'success' | 'accent';
+  /** Narrow-column rendering: tighter chrome. */
+  compact?: boolean;
 }): ReactNode {
   const toneClass = tone === 'success' ? 'text-success' : 'text-accent';
   return (
-    <div className="flex items-center gap-2.5 px-3 py-2">
+    <div className={`flex items-center ${compact ? 'gap-2 px-2.5 py-1.5' : 'gap-2.5 px-3 py-2'}`}>
       <span className={`shrink-0 ${toneClass}`}>{icon}</span>
       <span className="flex min-w-0 flex-col gap-0.5">
         <span className="text-[11px] text-muted">{label}</span>
@@ -178,11 +200,17 @@ function TrafficCell({
   upLabel,
   tone,
   title,
+  compact = false,
+  arrows = true,
 }: {
   icon: ReactNode;
   label: string;
   down: string;
-  up: string;
+  up?: string;
+  /** Narrow-column rendering: tighter chrome, no wrapping. */
+  compact?: boolean;
+  /** Hide the ↓/↑ glyphs; quota comparisons are not traffic directions. */
+  arrows?: boolean;
   /** Override the ↓/↑ prefixes (the quota cell shows "left" and "share"). */
   downLabel?: string;
   upLabel?: string;
@@ -193,29 +221,45 @@ function TrafficCell({
   const toneClass =
     tone === 'danger' ? 'text-danger' : tone === 'warn' ? 'text-warn' : 'text-text';
   return (
-    <div className="flex items-center gap-3 px-5 py-3" title={title}>
-      <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-surface-2 text-muted">
-        {icon}
-      </span>
-      <div className="flex min-w-0 flex-col gap-1">
+    <div
+      className={`flex items-center gap-3 ${compact ? 'min-w-0 flex-col items-start gap-1 px-2.5 py-2' : 'px-5 py-3'}`}
+      title={title}
+    >
+      {compact ? null : (
+        <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-surface-2 text-muted">
+          {icon}
+        </span>
+      )}
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
         <span className="truncate text-[11px] text-muted">{label}</span>
-        <div className="flex items-center gap-3 text-xs">
+        <div
+          className={`flex flex-wrap items-center whitespace-nowrap ${
+            compact ? 'gap-x-2 gap-y-0.5 text-[11px]' : 'gap-x-3 gap-y-0.5 text-xs'
+          }`}
+        >
+        
           <span className={`num flex items-center gap-1 ${toneClass}`}>
-            <span className="text-success" aria-hidden="true">
-              ↓
-            </span>
+            {arrows && downLabel === undefined ? (
+              <span className="text-success" aria-hidden="true">
+                ↓
+              </span>
+            ) : null}
             {down}
             {downLabel !== undefined ? (
               <span className="text-muted">{downLabel}</span>
             ) : null}
           </span>
-          <span className={`num flex items-center gap-1 ${toneClass}`}>
-            <span className="text-accent" aria-hidden="true">
-              ↑
+          {up !== undefined ? (
+            <span className={`num flex items-center gap-1 ${toneClass}`}>
+              {arrows && upLabel === undefined ? (
+                <span className="text-accent" aria-hidden="true">
+                  ↑
+                </span>
+              ) : null}
+              {up}
+              {upLabel !== undefined ? <span className="text-muted">{upLabel}</span> : null}
             </span>
-            {up}
-            {upLabel !== undefined ? <span className="text-muted">{upLabel}</span> : null}
-          </span>
+          ) : null}
         </div>
       </div>
     </div>
@@ -250,7 +294,9 @@ function LegendRow({
 
 export interface NodeCardProps {
   node: NodeSummary;
-  /** How the CPU / memory / disk tiles draw their meter (dashboard-wide preference). */
+  /** Detailed shows the full card; compact drops to meters + rates only. */
+  layout: LayoutMode;
+  /** How the CPU / memory / disk tiles draw their meter. */
   meterStyle: MeterStyle;
   /** Cards start open; collapse state is local to the card. */
   defaultExpanded?: boolean;
@@ -263,7 +309,12 @@ export interface NodeCardProps {
  * The per-node history is only requested while the card is open, so a collapsed
  * node costs no extra round trip.
  */
-export function NodeCard({ node, meterStyle, defaultExpanded = true }: NodeCardProps): ReactNode {
+export function NodeCard({
+  node,
+  layout,
+  meterStyle,
+  defaultExpanded = true,
+}: NodeCardProps): ReactNode {
   const { t, lang } = useI18n();
   const now = useNow(5_000);
   const [expanded, setExpanded] = useState(defaultExpanded);
@@ -272,6 +323,11 @@ export function NodeCard({ node, meterStyle, defaultExpanded = true }: NodeCardP
 
   const online = node.online === true;
   const metrics = node.metrics;
+  // Compact keeps the meters and rates only; the chart, ratio donut and
+  // protocol panel are dropped so a fleet reads as one scannable list. The
+  // meter style (bars or rings) applies in both layouts.
+  const compact = layout === 'compact';
+  const tileMode: MeterStyle = meterStyle;
 
   const chartQuery = useNodeMetrics(expanded ? node.id : undefined, hours);
   const dayQuery = useNodeMetrics(expanded ? node.id : undefined, 24);
@@ -314,12 +370,14 @@ export function NodeCard({ node, meterStyle, defaultExpanded = true }: NodeCardP
   const todayIn = counterDelta(dayPoints, (p) => p.net_in, startOfToday);
   const todayOut = counterDelta(dayPoints, (p) => p.net_out, startOfToday);
 
-  // Remaining quota for the current month. Metered month-to-date (not since
-  // boot) because the quota is monthly; `traffic_both` decides whether upload
-  // counts too — most providers meter down + up.
-  const monthIn = node.traffic_month_in ?? 0;
-  const monthOut = node.traffic_month_out ?? 0;
-  const usedThisMonth = node.traffic_both === false ? monthOut : monthIn + monthOut;
+  // Remaining quota for the current month. `traffic_used` is the worker's
+  // metered month-to-date figure including any operator correction; falling
+  // back to the raw counters keeps older workers working.
+  const fallbackUsed =
+    node.traffic_both === false
+      ? (node.traffic_month_out ?? 0)
+      : (node.traffic_month_in ?? 0) + (node.traffic_month_out ?? 0);
+  const usedThisMonth = node.traffic_used ?? fallbackUsed;
   const quotaBytes = node.traffic_gb > 0 ? node.traffic_gb * 1024 ** 3 : 0;
   const remaining = quotaBytes > 0 ? quotaBytes - usedThisMonth : 0;
   const remainingPercent = quotaBytes > 0 ? (remaining / quotaBytes) * 100 : 0;
@@ -355,7 +413,9 @@ export function NodeCard({ node, meterStyle, defaultExpanded = true }: NodeCardP
   const osTag = node.tags.find((tag) => !/^(x86|arm|aarch|amd|i[3-6]86)/i.test(tag)) ?? '';
 
   return (
-    <article className="card overflow-hidden">
+    <article
+      className={`card overflow-hidden ${compact ? 'flex aspect-square flex-col' : ''}`}
+    >
       {/* ── header ── */}
       <h3 className="flex items-center">
         <button
@@ -363,15 +423,33 @@ export function NodeCard({ node, meterStyle, defaultExpanded = true }: NodeCardP
           onClick={() => setExpanded((open) => !open)}
           aria-expanded={expanded}
           aria-controls={panelId}
-          className="flex min-w-0 flex-1 items-center gap-3 px-5 py-3.5 text-left transition-colors duration-150 hover:bg-surface-2/40"
+          className={`flex min-w-0 flex-1 items-center gap-3 text-left transition-colors duration-150 hover:bg-surface-2/40 ${
+            compact ? 'px-3 py-2.5' : 'px-5 py-3.5'
+          }`}
         >
           <StatusDot online={online} label={statusLabel} />
-          <span className="truncate text-[15px] font-semibold text-text">{node.name}</span>
+          <span className="min-w-0 truncate text-[15px] font-semibold text-text">{node.name}</span>
           <Badge tone={online ? 'success' : 'muted'} dot>
             {statusLabel}
           </Badge>
+          {/* Country and OS ride on the name row; the rest of the facts stay on
+              the meta strip below. */}
+          {node.country.length > 0 ? (
+            <span
+              className="flex shrink-0 items-center gap-1 text-[11px] text-muted"
+              title={node.ip.length > 0 ? `${t('node.ip')} ${node.ip}` : undefined}
+            >
+              <CountryFlag code={node.country} className="text-[13px]" />
+              <span className="num">{node.country}</span>
+            </span>
+          ) : node.ip.length > 0 ? (
+            <span className="num shrink-0 text-[11px] text-muted">{node.ip}</span>
+          ) : null}
+          {osTag.length > 0 ? (
+            <span className="min-w-0 truncate text-[11px] text-muted">{osTag}</span>
+          ) : null}
           {node.notify === false ? (
-            <span title={t('node.notifyOff')} className="text-muted">
+            <span title={t('node.notifyOff')} className="shrink-0 text-muted">
               <IconBellOff className="size-3.5" />
             </span>
           ) : null}
@@ -384,60 +462,50 @@ export function NodeCard({ node, meterStyle, defaultExpanded = true }: NodeCardP
         </button>
       </h3>
 
-      {/* ── meta strip ── */}
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-5 pb-3.5 text-[11px] text-muted">
-        <IconRefresh className="size-3.5 text-success" />
-        {node.country.length > 0 ? (
-          // Country + flag replaces the raw IP on the strip; the IP survives
-          // as the hover tooltip and on the detail page.
-          <span
-            className="flex items-center gap-1.5"
-            title={node.ip.length > 0 ? `${t('node.ip')} ${node.ip}` : undefined}
-          >
-            <CountryFlag code={node.country} className="text-[13px]" />
-            <span className="num text-text/85">{node.country}</span>
-          </span>
-        ) : node.ip.length > 0 ? (
+      {/* ── meta strip ──
+          Separators lead each fact rather than trail it, so a fact that is
+          absent (no OS tag, no price, compact layout) never leaves a dangling
+          "·" behind. */}
+      <div
+        className={`flex items-center text-[11px] text-muted ${
+          compact ? 'gap-x-2 overflow-hidden px-3 pb-2.5' : 'flex-wrap gap-x-3 gap-y-1 px-5 pb-3.5'
+        }`}
+      >
+        {compact ? null : <IconRefresh className="size-3.5 shrink-0 text-success" />}
+
+        {/* Uptime is dropped in compact (narrow column), everything else stays
+            available in both layouts — an expiry date the operator set must not
+            silently disappear just because the card is small. */}
+        {compact ? null : (
           <span className="flex items-center gap-1.5">
-            <span>{t('node.ip')}</span>
-            <span className="num text-text/85">{node.ip}</span>
+            <span>{t('node.uptime')}</span>
+            <span className="num text-text/85">{online ? duration(node.uptime, 2, lang) : '–'}</span>
           </span>
-        ) : null}
-        {node.country.length > 0 || node.ip.length > 0 ? <span aria-hidden="true">·</span> : null}
-        <span className="flex items-center gap-1.5">
-          <span>{t('node.uptime')}</span>
-          <span className="num text-text/85">{online ? duration(node.uptime, 2, lang) : '–'}</span>
-        </span>
-        {osTag.length > 0 ? (
-          <>
-            <span aria-hidden="true">·</span>
-            <span className="flex items-center gap-1.5">
-              <span>{t('node.os')}</span>
-              <span className="text-text/85">{osTag}</span>
-            </span>
-          </>
-        ) : null}
+        )}
+
         {node.price.length > 0 ? (
           <>
-            <span aria-hidden="true">·</span>
+            <Dot />
             {/* Plain font: the price is free-form operator text (often CJK),
                 which the tabular `num` face has no glyphs for. */}
-            <span className="text-text/85">{node.price}</span>
+            <span className="shrink-0 whitespace-nowrap text-text/85">{node.price}</span>
           </>
         ) : null}
+
         {node.traffic_gb > 0 ? (
           <>
-            <span aria-hidden="true">·</span>
-            <span className="flex items-center gap-1.5">
+            <Dot />
+            <span className="flex shrink-0 items-center gap-1.5">
               <span>{t('node.trafficQuota')}</span>
               <span className="num text-text/85">{quota(node.traffic_gb)}</span>
             </span>
           </>
         ) : null}
+
         {node.expires_at.length > 0 ? (
           <>
-            <span aria-hidden="true">·</span>
-            <span className="flex items-center gap-1.5">
+            <Dot />
+            <span className="flex shrink-0 items-center gap-1.5">
               <span>{t('node.expires')}</span>
               <span
                 className={`num ${
@@ -453,30 +521,41 @@ export function NodeCard({ node, meterStyle, defaultExpanded = true }: NodeCardP
             </span>
           </>
         ) : null}
-        <span aria-hidden="true">·</span>
-        <span className="flex items-center gap-1.5">
+
+        <Dot />
+        <span className="flex shrink-0 items-center gap-1.5 whitespace-nowrap">
           <span>{t('node.lastSeen')}</span>
           <span className="num text-text/85">{relativeTime(node.last_seen, now, lang)}</span>
         </span>
       </div>
 
       {expanded ? (
-        <div id={panelId} className="flex flex-col gap-4 border-t border-border/60 p-5">
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(0,1.75fr)_minmax(0,1fr)]">
+        <div
+          id={panelId}
+          className={`flex flex-col border-t border-border/60 ${
+            compact ? 'flex-1 justify-center gap-2.5 p-2.5' : 'gap-4 p-5'
+          }`}
+        >
+          <div
+            className={`grid grid-cols-1 gap-4 ${
+              compact ? '' : 'xl:grid-cols-[minmax(0,1.45fr)_minmax(0,1.75fr)_minmax(0,1fr)]'
+            }`}
+          >
             {/* ── meters ──
                 The tiles stretch to fill the column so the panel is never
                 shorter than the chart / donut beside it; the rate row keeps
                 its natural (compact) height. */}
-            <div className="flex flex-col gap-2.5">
+            <div className="flex min-h-0 flex-col gap-2.5">
               {/* Bar mode stacks the three metrics vertically (each a wide
                   row); ring mode keeps them side by side. */}
               <div
-                className={`grid flex-1 gap-2.5 ${
-                  meterStyle === 'bar' ? 'grid-cols-1' : 'grid-cols-3'
+                className={`grid min-h-0 flex-1 gap-2.5 ${
+                  meterStyle === 'ring' ? 'grid-cols-3' : 'grid-cols-1'
                 }`}
               >
                 <MetricTile
-                  mode={meterStyle}
+                  mode={tileMode}
+                  compact={compact}
                   icon={<IconCpu className="size-4" />}
                   label={t('node.cpu')}
                   value={`${number(cpu, 1)}%`}
@@ -484,7 +563,8 @@ export function NodeCard({ node, meterStyle, defaultExpanded = true }: NodeCardP
                   hints={cpuHints}
                 />
                 <MetricTile
-                  mode={meterStyle}
+                  mode={tileMode}
+                  compact={compact}
                   icon={<IconMemory className="size-4" />}
                   label={t('node.mem')}
                   value={`${number(memPercent, 1)}%`}
@@ -492,7 +572,8 @@ export function NodeCard({ node, meterStyle, defaultExpanded = true }: NodeCardP
                   hints={memHints}
                 />
                 <MetricTile
-                  mode={meterStyle}
+                  mode={tileMode}
+                  compact={compact}
                   icon={<IconDisk className="size-4" />}
                   label={t('node.disk')}
                   value={`${number(diskPercent, 1)}%`}
@@ -507,6 +588,7 @@ export function NodeCard({ node, meterStyle, defaultExpanded = true }: NodeCardP
                   value={rate(metrics?.rx_rate)}
                   hint={metrics !== null ? `Σ ${bytes(metrics.net_in)}` : undefined}
                   tone="success"
+                  compact={compact}
                 />
                 <RateCell
                   icon={<IconUpload className="size-5" />}
@@ -514,11 +596,13 @@ export function NodeCard({ node, meterStyle, defaultExpanded = true }: NodeCardP
                   value={rate(metrics?.tx_rate)}
                   hint={metrics !== null ? `Σ ${bytes(metrics.net_out)}` : undefined}
                   tone="accent"
+                  compact={compact}
                 />
               </div>
             </div>
 
-            {/* ── traffic chart ── */}
+            {/* ── traffic chart ── (omitted entirely in compact) */}
+            {compact ? null : (
             <section className={`flex flex-col gap-2 p-3 ${TILE}`}>
               <header className="flex flex-wrap items-center justify-between gap-2">
                 <span className="flex items-center gap-2">
@@ -545,8 +629,10 @@ export function NodeCard({ node, meterStyle, defaultExpanded = true }: NodeCardP
                 </span>
               </div>
             </section>
+            )}
 
-            {/* ── split + protocol ── */}
+            {/* ── split + protocol ── (omitted entirely in compact) */}
+            {compact ? null : (
             <div className="flex flex-col gap-2.5">
               <section className={`flex items-center gap-3 p-3 ${TILE}`}>
                 <Donut
@@ -611,38 +697,72 @@ export function NodeCard({ node, meterStyle, defaultExpanded = true }: NodeCardP
                 <p className="text-[11px] text-muted/80">{t('common.noData')}</p>
               </section>
             </div>
+            )}
           </div>
         </div>
       ) : null}
 
-      {/* ── totals ── */}
-      <div className="grid grid-cols-1 divide-y divide-border/60 border-t border-border/60 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto] sm:divide-x sm:divide-y-0">
+      {/* ── totals ──
+          Three facts side by side in both layouts; compact just uses tighter
+          cells and drops the trailing "details" column. */}
+      <div
+        className={`grid grid-cols-3 divide-x divide-border/60 border-t border-border/60 ${
+          compact ? '' : 'sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]'
+        }`}
+      >
         <TrafficCell
           icon={<IconCalendar className="size-4" />}
           label={t('dashboard.todayTraffic')}
           down={bytes(todayIn)}
           up={bytes(todayOut)}
+          compact={compact}
         />
         <TrafficCell
           icon={<IconDatabase className="size-4" />}
-          label={t('dashboard.totalTraffic')}
-          down={bytes(netIn)}
-          up={bytes(netOut)}
-        />
-        <TrafficCell
-          icon={<IconClock className="size-4" />}
-          label={t('dashboard.remainingTraffic')}
-          down={quotaBytes > 0 ? bytes(Math.max(0, remaining)) : '–'}
-          up={quotaBytes > 0 ? `${number(Math.max(0, remainingPercent), 0)}%` : t('dashboard.noQuota')}
-          downLabel={t('dashboard.remainingLeft')}
-          upLabel={t('dashboard.remainingShare')}
-          tone={overQuota ? 'danger' : quotaBytes > 0 && remainingPercent < 20 ? 'warn' : undefined}
+          compact={compact}
+          label={t('dashboard.usedTraffic')}
+          down={quotaBytes > 0 ? bytes(usedThisMonth) : bytes(netIn + netOut)}
+          up={quotaBytes > 0 ? quota(node.traffic_gb) : undefined}
+          downLabel={quotaBytes > 0 ? t('dashboard.usedOf') : undefined}
+          arrows={!compact}
           title={
-            quotaBytes > 0
-              ? `${t('dashboard.quotaUsed')}: ${bytes(usedThisMonth)} / ${quota(node.traffic_gb)}`
+            node.traffic_corrected === true
+              ? `${t('dashboard.quotaUsed')}: ${bytes(usedThisMonth)}${
+                  quotaBytes > 0 ? ` / ${quota(node.traffic_gb)}` : ''
+                } (${t('dashboard.quotaCorrected')})`
               : undefined
           }
         />
+        <TrafficCell
+          icon={<IconClock className="size-4" />}
+          label={
+            node.traffic_corrected === true
+              ? `${t('dashboard.remainingTraffic')} · ${t('dashboard.quotaCorrectedShort')}`
+              : t('dashboard.remainingTraffic')
+          }
+          down={quotaBytes > 0 ? bytes(Math.max(0, remaining)) : '–'}
+          up={
+            compact
+              ? undefined
+              : quotaBytes > 0
+                ? `${number(Math.max(0, remainingPercent), 0)}%`
+                : t('dashboard.noQuota')
+          }
+          downLabel={compact ? undefined : t('dashboard.remainingLeft')}
+          upLabel={t('dashboard.remainingShare')}
+          tone={overQuota ? 'danger' : quotaBytes > 0 && remainingPercent < 20 ? 'warn' : undefined}
+          arrows={!compact}
+          compact={compact}
+          title={
+            quotaBytes > 0
+              ? `${t('dashboard.remainingTraffic')}: ${bytes(Math.max(0, remaining))} (${number(
+                  Math.max(0, remainingPercent),
+                  0,
+                )}% ${t('dashboard.remainingShare')})`
+              : undefined
+          }
+        />
+        {compact ? null : (
         <div className="flex items-center justify-end px-5 py-3">
           <Link to={`/node/${node.id}`}>
             <Button size="pill" variant="pill" icon={<IconArrowRight className="size-3.5" />}>
@@ -650,6 +770,7 @@ export function NodeCard({ node, meterStyle, defaultExpanded = true }: NodeCardP
             </Button>
           </Link>
         </div>
+        )}
       </div>
     </article>
   );

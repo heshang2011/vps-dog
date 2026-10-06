@@ -3,7 +3,16 @@ import { Badge } from '../components/Badge';
 import { EmptyState } from '../components/EmptyState';
 import { Button } from '../components/Button';
 import { Input } from '../components/Input';
-import { MeterStyleSwitch, readMeterStyle, writeMeterStyle, type MeterStyle } from '../components/MeterStyleSwitch';
+import {
+  LayoutModeSwitch,
+  MeterStyleSwitch,
+  readLayoutMode,
+  readMeterStyle,
+  writeLayoutMode,
+  writeMeterStyle,
+  type LayoutMode,
+  type MeterStyle,
+} from '../components/ViewModeSwitches';
 import { Select } from '../components/Select';
 import { NodeCard, NodeCardSkeleton } from '../components/NodeCard';
 import { Spinner } from '../components/Spinner';
@@ -96,11 +105,16 @@ export default function Dashboard(): ReactNode {
   const [group, setGroup] = useState('all');
   const [showHidden, setShowHidden] = useState(false);
   const [meterStyle, setMeterStyle] = useState<MeterStyle>(readMeterStyle);
+  const [layout, setLayout] = useState<LayoutMode>(readLayoutMode);
   const debouncedSearch = useDebounced(search, 180);
 
   useEffect(() => {
     writeMeterStyle(meterStyle);
   }, [meterStyle]);
+
+  useEffect(() => {
+    writeLayoutMode(layout);
+  }, [layout]);
 
   const nodes = useMemo<ReadonlyArray<NodeSummary>>(() => data?.nodes ?? [], [data]);
 
@@ -148,7 +162,9 @@ export default function Dashboard(): ReactNode {
             </h1>
             <p className="text-xs text-muted">{t('dashboard.subtitle')}</p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <LayoutModeSwitch value={layout} onChange={setLayout} />
+            <MeterStyleSwitch value={meterStyle} onChange={setMeterStyle} />
             <Button
               size="pill"
               variant="pill"
@@ -197,9 +213,6 @@ export default function Dashboard(): ReactNode {
             />
             {t('dashboard.showHidden')}
           </label>
-          <div className="flex h-9.5 items-center">
-            <MeterStyleSwitch value={meterStyle} onChange={setMeterStyle} />
-          </div>
         </div>
       </header>
 
@@ -242,9 +255,15 @@ export default function Dashboard(): ReactNode {
           <EmptyState title={t('dashboard.empty')} hint={t('dashboard.emptyHint')} />
         )
       ) : (
-        <div className="flex flex-col gap-4">
+        <div
+          className={
+            layout === 'compact'
+              ? 'grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3'
+              : 'flex flex-col gap-4'
+          }
+        >
           {filtered.map((node) => (
-            <NodeCard key={node.id} node={node} meterStyle={meterStyle} />
+            <NodeCard key={node.id} node={node} layout={layout} meterStyle={meterStyle} />
           ))}
         </div>
       )}

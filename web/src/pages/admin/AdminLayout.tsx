@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
 import { Link, Navigate, NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { AppFooter } from '../../components/AppFooter';
+import { Badge } from '../../components/Badge';
 import { Brand } from '../../components/Brand';
 import { Button, IconButton } from '../../components/Button';
 import { LangToggle, ThemeToggle } from '../../components/HeaderPills';
@@ -161,12 +162,26 @@ export default function AdminLayout(): ReactNode {
           </div>
 
           <div className="flex flex-col gap-3 border-t border-border pt-4">
-            <div className="flex flex-col gap-0.5 px-2">
-              <span className="text-[11px] text-muted">{t('admin.signedInAs', { name: authValue.user.username })}</span>
-              <span className="text-[11px] text-muted/80">{authValue.user.role}</span>
+            <div className="flex min-w-0 flex-col gap-1 px-2">
+              <span className="truncate text-[11px] text-muted">
+                {t('admin.signedInAs', { name: authValue.user.username })}
+              </span>
+              {/* The role was a bare `admin`/`viewer` token sitting directly
+                  under the username, which read as the name printed twice. */}
+              {/* `items-start` stops the column from stretching the badge to
+                  full width (it is inline-flex, so it would fill the row). */}
+              <span className="flex items-start">
+                <Badge tone={authValue.user.role === 'admin' ? 'accent' : 'muted'}>
+                  {t(authValue.user.role === 'admin' ? 'admin.users.role.admin' : 'admin.users.role.viewer')}
+                </Badge>
+              </span>
             </div>
-            <div className="flex items-center gap-2">
-              <ThemeToggle onSurface />
+            {/* Same total width as the full-width buttons below, so the
+                sidebar's controls share one left/right edge. */}
+            <div className="flex items-stretch gap-2">
+              <span className="flex min-w-0 flex-1 [&>button]:w-full">
+                <ThemeToggle onSurface />
+              </span>
               <LangToggle onSurface />
             </div>
             <div className="flex flex-col gap-1.5">
