@@ -25,6 +25,15 @@ export function Modal({
 }: ModalProps): ReactNode {
   const panelRef = useRef<HTMLDivElement>(null);
   const previouslyFocused = useRef<Element | null>(null);
+  // Callers pass inline arrow functions, so `onClose` gets a new identity on
+  // every render. Reading it through a ref keeps the open/close effect keyed
+  // on `open` alone — with `onClose` in the dependency array the effect would
+  // re-run on EVERY keystroke inside the dialog (typing state → re-render →
+  // new closure), yanking focus away from the input after each character.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  });
 
   useEffect(() => {
     if (!open) return;
@@ -32,7 +41,7 @@ export function Modal({
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.stopPropagation();
-        onClose();
+        onCloseRef.current();
       }
     };
     document.addEventListener('keydown', onKeyDown);
@@ -44,7 +53,7 @@ export function Modal({
       document.body.style.overflow = previousOverflow;
       if (previouslyFocused.current instanceof HTMLElement) previouslyFocused.current.focus();
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 
