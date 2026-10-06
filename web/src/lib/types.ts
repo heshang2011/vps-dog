@@ -281,7 +281,7 @@ export interface AuditRow {
 }
 
 export interface AuditResponse {
-  logs: AuditRow[];
+  audit: AuditRow[];
 }
 
 export interface AdminOverview {

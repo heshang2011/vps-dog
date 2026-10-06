@@ -81,6 +81,13 @@
 
 ### 修复
 
+- **后台设置页保存时报 `Cannot read properties of undefined (reading 'trim')`。**
+  `GET /api/admin/settings` 返回的是 `{ settings: {...} }` 信封，而 API 客户端把
+  响应当作裸的 `Settings` 对象返回——设置页从一开始就拿不到数据，表单显示为空，
+  一点「保存」就在 `site_name.trim()` 上炸掉（配置 Telegram 通知时首当其冲）。
+  现在客户端正确解包信封，`toForm` 同时对全部字符串字段补了空值防御。
+- **审计日志页面始终为空。** Worker 返回的键是 `audit`（有测试断言），客户端
+  却按 `logs` 读取，导致后台审计页永远渲染空列表。已改为一致的 `audit` 键。
 - **弹窗内输入框每敲一个字母就丢焦点。** `Modal` 的打开/关闭副作用把 `onClose`
   列进了依赖数组，而所有调用方传的都是内联箭头函数——每敲一个键触发
   setState 重渲染、`onClose` 换成新引用、副作用重跑，焦点先被恢复到打开

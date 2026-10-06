@@ -36,7 +36,7 @@ export default function AdminAudit(): ReactNode {
     refetchInterval: 30_000,
   });
 
-  const rows = auditQuery.data?.logs ?? [];
+  const rows = auditQuery.data?.audit ?? [];
 
   const columns = useMemo<ReadonlyArray<Column<AuditRow>>>(
     () => [

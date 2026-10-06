@@ -29,14 +29,14 @@ interface SettingsForm {
 
 function toForm(settings: Settings): SettingsForm {
   return {
-    site_name: settings.site_name,
-    site_description: settings.site_description,
+    site_name: settings.site_name ?? '',
+    site_description: settings.site_description ?? '',
     report_interval: String(settings.report_interval),
     offline_after: String(settings.offline_after),
     retention_days: String(settings.retention_days),
     ping_retention_days: String(settings.ping_retention_days),
     theme: settings.theme,
-    custom_head: settings.custom_head,
+    custom_head: settings.custom_head ?? '',
     tg_bot_token: settings.tg_bot_token ?? '',
     tg_chat_id: settings.tg_chat_id ?? '',
     tg_notify_offline: settings.tg_notify_offline ?? true,

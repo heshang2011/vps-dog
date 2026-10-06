@@ -235,7 +235,11 @@ export const adminApi = {
 
   /* settings */
   getSettings(signal?: AbortSignal): Promise<Settings> {
-    return request<Settings>('/admin/settings', { signal });
+    // The worker wraps the payload in `{ settings }` — unwrap it here so the
+    // page sees the bare Settings object its type promises.
+    return request<{ settings: Settings }>('/admin/settings', { signal }).then(
+      (body) => body.settings,
+    );
   },
   updateSettings(patch: Partial<Settings>): Promise<OkResponse> {
     return request<OkResponse>('/admin/settings', { method: 'PUT', body: patch });
